@@ -1,0 +1,35 @@
+# MedDocAI - Python dependencies
+# Install: pip install -r requirements.txt
+
+# Core
+pydantic>=2.0
+
+# Async HTTP (batch pipeline)
+aiohttp>=3.9
+
+# LLM
+anthropic>=0.100
+openai>=1.0
+
+# Vector store
+qdrant-client>=1.9
+
+# Reranking (Phase 2 - cross-encoder for retrieve-then-rerank)
+sentence-transformers>=3.0   # pulls torch; local cross-encoder reranker
+
+# Agent pipeline (Phase 2)
+langgraph>=0.2
+langchain-core>=0.3
+langchain-anthropic>=0.2
+
+# Observability (Phase 2)
+langsmith>=0.1
+
+# Evaluation (Phase 4)
+ragas>=0.1
+
+# Frontend (Phase 3)
+streamlit>=1.35
+
+# Utilities
+python-dotenv>=1.0

@@ -1,0 +1,36 @@
+# Environment
+.env
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Data (too large for git)
+data/
+*.zip
+*.tar.gz
+
+# Database
+*.db
+*.sqlite3
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Local AI/tool settings
+.claude/
+.codex/
+
+# Internal project documentation
+CLAUDE.md
+data_examples.md
+executed_steps.md
+PROJECT_PLAN.md
+synthea_data_study.md
+
+# OS
+.DS_Store
+Thumbs.db
