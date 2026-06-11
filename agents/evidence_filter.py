@@ -30,11 +30,15 @@ logger = logging.getLogger(__name__)
 
 # --- Reranked path ---
 RERANK_MIN_SCORE = 0.02   # drop items the cross-encoder scores as clearly irrelevant
-MAX_EVIDENCE = 8          # final cap
+MAX_EVIDENCE = 8          # final cap on RETRIEVED evidence (patient record is extra)
 
 # --- Fallback (bi-encoder) path ---
 BI_ENCODER_THRESHOLD = 0.30
 NONSCORED_PRIORITY = 0.55
+
+# Intents for which the patient's own record is relevant grounding.
+# (Policy/eligibility and general questions don't need patient clinical context.)
+CLINICAL_INTENTS = {"medication_info", "condition_education", "drug_recall"}
 
 
 def _normalize(text: str) -> str:
@@ -76,6 +80,58 @@ def _dedup(evidence: list[Evidence]) -> list[Evidence]:
     return deduped
 
 
+def build_patient_evidence(ctx: dict) -> Evidence | None:
+    """Build a compact patient-record Evidence from the selected patient's data.
+
+    Returns None if the patient has no usable clinical facts. This becomes a
+    first-class evidence item (source='patient_record') so the Answer Generator
+    can cite it and the Reviewer's faithfulness check counts patient facts as
+    valid grounding — rather than treating patient data as a side-channel the
+    review machinery doesn't know about.
+    """
+    conditions = ctx.get("conditions_json") or ctx.get("conditions") or []
+    meds       = ctx.get("medications_json") or ctx.get("medications") or []
+    labs       = ctx.get("labs_json") or ctx.get("labs") or []
+
+    cond_names = [c.get("display", "") for c in conditions if c.get("display")][:10]
+    active_meds = [m.get("display", "") for m in meds
+                   if m.get("status") == "active" and m.get("display")][:10]
+    abnormal_labs = [
+        f"{l.get('display', '')}: {l.get('value', '')} {l.get('unit', '') or ''}".strip()
+        for l in labs if l.get("is_abnormal")
+    ][:10]
+
+    if not (cond_names or active_meds or abnormal_labs):
+        return None
+
+    parts = [f"Patient: {ctx.get('name', 'unknown')}, "
+             f"{ctx.get('age', '?')}yo {ctx.get('gender', '')}"]
+    if cond_names:
+        parts.append("Active conditions: " + "; ".join(cond_names))
+    if active_meds:
+        parts.append("Active medications: " + "; ".join(active_meds))
+    if abnormal_labs:
+        parts.append("Abnormal lab results: " + "; ".join(abnormal_labs))
+
+    return Evidence(
+        source="patient_record",
+        title=f"Patient Record — {ctx.get('name', 'patient')}",
+        text="\n".join(parts),
+        # score=None: the patient record bypasses the cross-encoder (it's definitional
+        # context, not a candidate competing for relevance). It is pinned to position [1]
+        # by explicit prepending, NOT by a score. Using None — rather than a fake 1.0 —
+        # keeps it honest: it has no rerank score, like the SQL/API evidence items.
+        score=None,
+        metadata={
+            "patient_id": ctx.get("patient_id", ""),
+            "name":       ctx.get("name", ""),
+            "age":        ctx.get("age"),
+            "gender":     ctx.get("gender", ""),
+        },
+        citation="Patient Record (selected patient's FHIR data)",
+    )
+
+
 def _fallback_order(evidence: list[Evidence]) -> list[Evidence]:
     """Bi-encoder ordering used when the cross-encoder is unavailable."""
     kept = [e for e in evidence
@@ -108,10 +164,22 @@ def evidence_filter_node(state: PipelineState) -> dict:
         filtered = _fallback_order(deduped)
         method = "bi-encoder-fallback"
 
+    # Inject the patient record as a first-class evidence item for clinical intents.
+    # Added AFTER ranking/cap so it's always present (it's contextual grounding, not
+    # competing for relevance) and placed first so the answer cites it as [1].
+    patient_injected = False
+    ctx = state.get("patient_context")
+    if ctx and state.get("intent") in CLINICAL_INTENTS:
+        patient_ev = build_patient_evidence(ctx)
+        if patient_ev is not None:
+            filtered = [patient_ev] + filtered
+            patient_injected = True
+
     trace = state.get("trace", [])
     trace = trace + [
         f"Filter: {len(raw)} raw -> {len(deduped)} deduped -> "
-        f"{len(filtered)} kept ({method}, cap={MAX_EVIDENCE})"
+        f"{len(filtered)} kept ({method}, cap={MAX_EVIDENCE}, "
+        f"patient_record={'yes' if patient_injected else 'no'})"
     ]
 
     return {

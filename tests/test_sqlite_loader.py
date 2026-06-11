@@ -243,3 +243,62 @@ def test_chat_history_session_isolation(db):
 def test_chat_history_empty_session(db):
     history = db.get_chat_history("nonexistent-session")
     assert history == []
+
+
+# ---------------------------------------------------------------------------
+# Per-patient persistent chat history (persona-keyed)
+# ---------------------------------------------------------------------------
+
+def test_patient_chat_save_and_load(db):
+    db.save_chat_message("s1", "user", "Is metformin safe?",
+                         patient_id="P1", persona="patient")
+    db.save_chat_message("s1", "assistant", "Generally yes...",
+                         patient_id="P1", persona="patient",
+                         sources={"evidence": [], "disclaimers": ["d"], "trace": []})
+    hist = db.get_patient_chat_history("P1", persona="patient")
+    assert len(hist) == 2
+    assert hist[0]["role"] == "user"
+    assert hist[1]["role"] == "assistant"
+    assert hist[1]["sources"]["disclaimers"] == ["d"]
+
+
+def test_patient_chat_persona_separates_threads(db):
+    db.save_chat_message("s1", "user", "patient question",
+                         patient_id="P1", persona="patient")
+    db.save_chat_message("s2", "user", "care manager question",
+                         patient_id="P1", persona="care_manager")
+    assert len(db.get_patient_chat_history("P1", persona="patient")) == 1
+    assert len(db.get_patient_chat_history("P1", persona="care_manager")) == 1
+    assert db.get_patient_chat_history("P1", persona="patient")[0]["content"] == "patient question"
+
+
+def test_patient_chat_persists_across_sessions(db):
+    db.save_chat_message("sessA", "user", "first", patient_id="P1", persona="patient")
+    db.save_chat_message("sessB", "user", "second", patient_id="P1", persona="patient")
+    # both sessions returned -> cross-session memory
+    assert len(db.get_patient_chat_history("P1", persona="patient")) == 2
+
+
+def test_patient_chat_chronological(db):
+    for i in range(3):
+        db.save_chat_message("s", "user", f"msg{i}", patient_id="P1", persona="patient")
+    hist = db.get_patient_chat_history("P1", persona="patient")
+    assert [m["content"] for m in hist] == ["msg0", "msg1", "msg2"]
+
+
+def test_patient_chat_delete(db):
+    db.save_chat_message("s", "user", "x", patient_id="P1", persona="patient")
+    db.save_chat_message("s", "user", "y", patient_id="P1", persona="care_manager")
+    assert db.delete_patient_chat_history("P1", persona="patient") == 1
+    assert db.get_patient_chat_history("P1", persona="patient") == []
+    assert len(db.get_patient_chat_history("P1", persona="care_manager")) == 1
+
+
+def test_patient_chat_unknown_returns_empty(db):
+    assert db.get_patient_chat_history("nobody") == []
+
+
+def test_persona_column_exists_after_migration(db):
+    with db._conn() as conn:
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(chat_history)").fetchall()}
+    assert "persona" in cols

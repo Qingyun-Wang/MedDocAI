@@ -108,6 +108,61 @@ class TestRouter:
         assert out["route_back_to"] is None
         assert out["reviewer_feedback"] is None
 
+    def test_router_tracks_attempted_queries(self, monkeypatch):
+        import agents.router as router_mod
+        monkeypatch.setattr(router_mod, "call_claude_structured", lambda **kw: {
+            "intent": "medication_info", "shaped_query": "metformin warnings",
+            "drug_name": "metformin", "reasoning": "r",
+        })
+        state = new_state("metformin?")
+        out = router_mod.router_node(state)
+        assert out["attempted_queries"] == ["metformin warnings"]
+
+    def test_router_accumulates_attempted_queries_on_retry(self, monkeypatch):
+        import agents.router as router_mod
+        monkeypatch.setattr(router_mod, "call_claude_structured", lambda **kw: {
+            "intent": "medication_info", "shaped_query": "metformin contraindications",
+            "drug_name": "metformin", "reasoning": "r",
+        })
+        state = new_state("metformin?")
+        state["route_back_to"] = "router"
+        state["attempted_queries"] = ["metformin side effects"]   # prior attempt
+        out = router_mod.router_node(state)
+        assert out["attempted_queries"] == ["metformin side effects",
+                                            "metformin contraindications"]
+
+    def test_router_broadens_tools_on_retry(self, monkeypatch):
+        import agents.router as router_mod
+        monkeypatch.setattr(router_mod, "call_claude_structured", lambda **kw: {
+            "intent": "medication_info", "shaped_query": "q",
+            "drug_name": "metformin", "reasoning": "r",
+        })
+        # First run: base tools only
+        first = router_mod.router_node(new_state("metformin?"))
+        assert first["tools_to_call"] == ["search_drug_labels", "fetch_drug_label"]
+
+        # Retry: base tools + retry-extra tools
+        retry_state = new_state("metformin?")
+        retry_state["route_back_to"] = "router"
+        retry = router_mod.router_node(retry_state)
+        assert set(["search_drug_labels", "fetch_drug_label"]).issubset(
+            set(retry["tools_to_call"]))
+        # broadened — has more tools than the base set
+        assert len(retry["tools_to_call"]) > 2
+        assert "search_medlineplus" in retry["tools_to_call"]
+
+    def test_router_no_duplicate_tools_on_retry(self, monkeypatch):
+        import agents.router as router_mod
+        monkeypatch.setattr(router_mod, "call_claude_structured", lambda **kw: {
+            "intent": "drug_recall", "shaped_query": "q",
+            "drug_name": "x", "reasoning": "r",
+        })
+        retry_state = new_state("q")
+        retry_state["route_back_to"] = "router"
+        out = router_mod.router_node(retry_state)
+        # no duplicates even though base + extra may overlap
+        assert len(out["tools_to_call"]) == len(set(out["tools_to_call"]))
+
 
 # ---------------------------------------------------------------------------
 # Evidence Filter (fully deterministic)

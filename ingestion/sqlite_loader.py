@@ -96,9 +96,10 @@ CREATE TABLE IF NOT EXISTS chat_history (
     session_id     TEXT    NOT NULL,
     user_id        TEXT,         -- NULL for anonymous
     patient_id     TEXT,         -- NULL if no patient context was active
+    persona        TEXT,         -- 'patient' | 'care_manager' (who was asking)
     role           TEXT    NOT NULL,  -- 'user' | 'assistant'
     content        TEXT    NOT NULL,
-    sources_json   TEXT,         -- JSON list of citation dicts
+    sources_json   TEXT,         -- JSON: assistant render data (evidence/disclaimers/trace)
     timestamp      TEXT    NOT NULL   -- ISO datetime
 );
 
@@ -145,6 +146,12 @@ class MedDocDB:
         """Create all tables and indexes (idempotent — safe to call repeatedly)."""
         with self._conn() as conn:
             conn.executescript(_DDL)
+            # Lightweight migration: add chat_history.persona to pre-existing DBs
+            cols = {row["name"] for row in
+                    conn.execute("PRAGMA table_info(chat_history)").fetchall()}
+            if "persona" not in cols:
+                conn.execute("ALTER TABLE chat_history ADD COLUMN persona TEXT")
+                logger.info("Migrated chat_history: added persona column")
         logger.info("Tables created/verified in %s", self.db_path)
 
     # ── NADAC pricing ──────────────────────────────────────────────────────
@@ -424,25 +431,33 @@ class MedDocDB:
         role: str,
         content: str,
         patient_id: Optional[str] = None,
+        persona: Optional[str] = None,
         user_id: Optional[str] = None,
-        sources: Optional[list[dict]] = None,
+        sources: Optional[dict | list] = None,
     ) -> None:
-        """Append a single message to chat history."""
+        """Append a single message to chat history (saved immediately, per-message).
+
+        `persona` is the asker's role ('patient' | 'care_manager') — used to key
+        history so a patient and a care manager see separate threads about the
+        same patient. `sources` is an arbitrary JSON-serialisable blob (for
+        assistant messages we store evidence/disclaimers/trace for re-rendering).
+        """
         with self._conn() as conn:
             conn.execute(
                 """
                 INSERT INTO chat_history
-                    (session_id, user_id, patient_id, role,
+                    (session_id, user_id, patient_id, persona, role,
                      content, sources_json, timestamp)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     session_id,
                     user_id,
                     patient_id,
+                    persona,
                     role,
                     content,
-                    json.dumps(sources) if sources else None,
+                    json.dumps(sources) if sources is not None else None,
                     datetime.utcnow().isoformat(),
                 ),
             )
@@ -463,6 +478,58 @@ class MedDocDB:
                 (session_id, limit),
             ).fetchall()
         messages = [dict(r) for r in reversed(rows)]
+        for msg in messages:
+            if msg.get("sources_json"):
+                msg["sources"] = json.loads(msg["sources_json"])
+            msg.pop("sources_json", None)
+        return messages
+
+    def delete_patient_chat_history(
+        self, patient_id: str, persona: Optional[str] = None
+    ) -> int:
+        """Delete a patient's stored chat history (optionally only for one persona).
+
+        Returns the number of rows deleted.
+        """
+        with self._conn() as conn:
+            if persona is not None:
+                cur = conn.execute(
+                    "DELETE FROM chat_history WHERE patient_id = ? AND persona = ?",
+                    (patient_id, persona),
+                )
+            else:
+                cur = conn.execute(
+                    "DELETE FROM chat_history WHERE patient_id = ?", (patient_id,)
+                )
+            return cur.rowcount
+
+    def get_patient_chat_history(
+        self,
+        patient_id: str,
+        persona: Optional[str] = None,
+        limit: int = 100,
+    ) -> list[dict]:
+        """Return a patient's chat history across all sessions, chronological.
+
+        Filters by persona when provided (so a patient sees only patient-side
+        conversations, a care manager only care-manager-side). Each returned dict:
+        {role, content, sources, timestamp}.
+        """
+        query = (
+            "SELECT role, content, sources_json, timestamp "
+            "FROM chat_history WHERE patient_id = ?"
+        )
+        params: list = [patient_id]
+        if persona is not None:
+            query += " AND persona = ?"
+            params.append(persona)
+        query += " ORDER BY id ASC LIMIT ?"
+        params.append(limit)
+
+        with self._conn() as conn:
+            rows = conn.execute(query, params).fetchall()
+
+        messages = [dict(r) for r in rows]
         for msg in messages:
             if msg.get("sources_json"):
                 msg["sources"] = json.loads(msg["sources_json"])

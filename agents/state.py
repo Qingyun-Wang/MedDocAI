@@ -81,6 +81,7 @@ class PipelineState(TypedDict, total=False):
     query: str
     patient_context: Optional[dict]   # pre-computed summary dict (or None)
     user_role: str                    # one of ROLES
+    conversation_history: list[dict]  # recent prior turns: [{role, content}, ...]
 
     # --- Router outputs ---
     intent: str
@@ -88,6 +89,7 @@ class PipelineState(TypedDict, total=False):
     drug_name: Optional[str]
     state_name: Optional[str]
     tools_to_call: list[str]
+    attempted_queries: list[str]      # every shaped_query tried (for retry diversification)
 
     # --- Retrieval outputs ---
     raw_evidence: list[Evidence]
@@ -120,22 +122,47 @@ class PipelineState(TypedDict, total=False):
 # State helpers
 # ---------------------------------------------------------------------------
 
+# How many recent turns to feed the LLM (bounds token cost).
+MAX_HISTORY_TURNS = 6
+
+
+def format_conversation_history(history: list[dict], max_turns: int = MAX_HISTORY_TURNS) -> str:
+    """Render the recent conversation as a compact transcript for prompts.
+
+    Returns "" if there is no history. Assistant answers are truncated so the
+    transcript stays small.
+    """
+    if not history:
+        return ""
+    recent = history[-max_turns:]
+    lines = []
+    for turn in recent:
+        who = "User" if turn.get("role") == "user" else "Assistant"
+        content = (turn.get("content") or "").strip().replace("\n", " ")
+        if who == "Assistant" and len(content) > 300:
+            content = content[:300] + "…"
+        lines.append(f"{who}: {content}")
+    return "\n".join(lines)
+
 def new_state(
     query: str,
     patient_context: Optional[dict] = None,
     user_role: str = "anonymous",
     max_iterations: int = 2,
+    conversation_history: Optional[list[dict]] = None,
 ) -> PipelineState:
     """Create a fresh PipelineState with sensible defaults."""
     return PipelineState(
         query=query,
         patient_context=patient_context,
         user_role=user_role,
+        conversation_history=conversation_history or [],
         intent="",
         shaped_query=query,
         drug_name=None,
         state_name=None,
         tools_to_call=[],
+        attempted_queries=[],
         raw_evidence=[],
         filtered_evidence=[],
         answer="",

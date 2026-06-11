@@ -16,7 +16,12 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"),
             override=True)
 
-from agents.patient_summary import patient_summary_node, _NO_PATIENT_MSG, _NO_SUMMARY_MSG
+from agents.patient_summary import (
+    patient_summary_node,
+    _NO_PATIENT_MSG,
+    _NO_DATA_MSG,
+    _BASIC_SUMMARY_HEADER,
+)
 from agents.state import new_state
 from ingestion.sqlite_loader import MedDocDB
 from tools.sqlite_tool import get_patient_summary
@@ -72,12 +77,28 @@ class TestPatientSummaryNode:
         assert out["review_passed"] is True
         assert out["citations"] == []
 
-    def test_patient_without_summary(self):
-        # Context that has an id but no stored summary
-        state = new_state("summarize", patient_context={"patient_id": "no-such-id"},
-                          user_role="care_manager")
+    def test_no_summary_but_structured_data_serves_basic_profile(self):
+        # Patient with FHIR data but no narrative summary (un-batched / new)
+        state = new_state("summarize", patient_context={
+            "patient_id": "no-such-id",   # not in DB -> no stored summary
+            "name": "New Patient", "age": 60, "gender": "female",
+            "conditions_json": [{"display": "Type 2 Diabetes", "snomed_code": "44054006"}],
+            "medications_json": [{"display": "Metformin", "status": "active"}],
+            "labs_json": [{"display": "eGFR", "value": 45, "is_abnormal": True}],
+        }, user_role="care_manager")
         out = patient_summary_node(state)
-        assert out["answer"] == _NO_SUMMARY_MSG
+        assert _BASIC_SUMMARY_HEADER.strip()[:20] in out["answer"]
+        assert "Type 2 Diabetes" in out["answer"]
+        assert out["review_passed"] is True
+
+    def test_no_summary_no_data_returns_no_data_msg(self):
+        # Patient id but zero clinical facts
+        state = new_state("summarize", patient_context={
+            "patient_id": "empty", "name": "Empty", "age": 30, "gender": "male",
+            "conditions_json": [], "medications_json": [], "labs_json": [],
+        }, user_role="care_manager")
+        out = patient_summary_node(state)
+        assert out["answer"] == _NO_DATA_MSG
         assert out["review_passed"] is True
 
     def test_context_missing_patient_id(self):

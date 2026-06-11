@@ -14,7 +14,12 @@ from __future__ import annotations
 import logging
 
 from agents.llm import call_claude_structured
-from agents.state import INTENTS, PipelineState, RouterDecision
+from agents.state import (
+    INTENTS,
+    PipelineState,
+    RouterDecision,
+    format_conversation_history,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +31,16 @@ INTENT_TOOL_MAP: dict[str, list[str]] = {
     "condition_education": ["search_medlineplus", "explain_condition_snomed"],
     "patient_summary":     [],   # handled by patient_summary_node (serves stored summary)
     "general":             ["search_medlineplus", "search_drug_labels"],
+}
+
+# Extra tools added ON RETRY (when the reviewer routed back here for insufficient
+# evidence) to cast a wider net — a genuinely different candidate pool, not a repeat.
+INTENT_RETRY_EXTRA_TOOLS: dict[str, list[str]] = {
+    "medication_info":     ["search_medlineplus", "check_drug_recalls"],
+    "drug_recall":         ["search_drug_labels", "fetch_drug_label"],
+    "policy_eligibility":  ["search_medlineplus"],
+    "condition_education": ["search_drug_labels"],
+    "general":             ["fetch_drug_label", "check_drug_recalls"],
 }
 
 _SYSTEM = """You are the Router for a healthcare document intelligence assistant.
@@ -49,7 +64,15 @@ Rules:
   If patient context is provided, enrich the shaped_query with the patient's
   relevant conditions (e.g., 'metformin safety' + patient has CKD ->
   'metformin safety renal impairment chronic kidney disease').
-- If reviewer feedback is provided, use it to improve the shaped_query and intent."""
+- If reviewer feedback is provided, use it to improve the shaped_query and intent.
+- If a RECENT CONVERSATION is shown, use it to resolve pronouns/references in the
+  current query (e.g., "what about its side effects?" after discussing metformin means
+  the shaped_query should be about metformin's side effects, and drug_name = metformin).
+- IF this is a RETRY and previous queries are shown: the earlier search did NOT find
+  adequate evidence. Produce a MEANINGFULLY DIFFERENT shaped_query — do not repeat a
+  previous one. Broaden it, use clinical synonyms, rephrase, or target different
+  aspects (e.g., switch from 'side effects' to 'adverse reactions contraindications
+  monitoring'). A near-identical query will just return the same evidence and fail again."""
 
 _INPUT_SCHEMA = {
     "type": "object",
@@ -82,7 +105,18 @@ _INPUT_SCHEMA = {
 
 
 def _build_user_prompt(state: PipelineState) -> str:
-    lines = [f"User query: {state['query']}"]
+    lines = []
+
+    # Recent conversation — lets the Router resolve references in the current query
+    # ("what about its side effects?" -> the drug from the previous turn).
+    convo = format_conversation_history(state.get("conversation_history", []))
+    if convo:
+        lines.append("RECENT CONVERSATION (resolve references like 'it'/'that drug' "
+                     "from this when shaping the query):")
+        lines.append(convo)
+        lines.append("")
+
+    lines.append(f"User query: {state['query']}")
     lines.append(f"User role: {state.get('user_role', 'anonymous')}")
 
     ctx = state.get("patient_context")
@@ -101,11 +135,21 @@ def _build_user_prompt(state: PipelineState) -> str:
         if med_names:
             lines.append(f"  Active medications: {', '.join(med_names)}")
 
-    feedback = state.get("reviewer_feedback")
-    if feedback and state.get("route_back_to") == "router":
-        lines.append("")
-        lines.append("REVIEWER FEEDBACK FROM PREVIOUS ATTEMPT (improve on this):")
-        lines.append(f"  {feedback}")
+    is_retry = state.get("route_back_to") == "router"
+    if is_retry:
+        attempted = state.get("attempted_queries", [])
+        if attempted:
+            lines.append("")
+            lines.append("PREVIOUS SEARCHES THAT DID NOT FIND ADEQUATE EVIDENCE "
+                         "(do NOT repeat — try a different angle):")
+            for q in attempted:
+                lines.append(f"  - {q}")
+
+        feedback = state.get("reviewer_feedback")
+        if feedback:
+            lines.append("")
+            lines.append("REVIEWER FEEDBACK FROM PREVIOUS ATTEMPT (address this):")
+            lines.append(f"  {feedback}")
 
     return "\n".join(lines)
 
@@ -131,16 +175,30 @@ def router_node(state: PipelineState) -> dict:
     )
 
     intent = decision.intent if decision.intent in INTENTS else "general"
-    tools = INTENT_TOOL_MAP.get(intent, INTENT_TOOL_MAP["general"])
+    tools = list(INTENT_TOOL_MAP.get(intent, INTENT_TOOL_MAP["general"]))
+
+    # On a retry-to-router, broaden the tool set so retrieval casts a wider net
+    # (a genuinely different candidate pool, not a repeat of the failed attempt).
+    is_retry = state.get("route_back_to") == "router"
+    if is_retry:
+        extra = INTENT_RETRY_EXTRA_TOOLS.get(intent, [])
+        # Union, preserving order and de-duplicating
+        tools = list(dict.fromkeys(tools + extra))
+
+    # Track every shaped query so future retries can avoid repeating them
+    attempted = state.get("attempted_queries", [])
+    attempted = attempted + [decision.shaped_query]
 
     trace = state.get("trace", [])
     trace = trace + [
         f"Router: intent={intent}, drug={decision.drug_name}, "
         f"state={decision.state_name}, tools={tools}"
+        + (f" [RETRY: broadened tools, query diversified]" if is_retry else "")
     ]
 
     return {
         "intent": intent,
+        "attempted_queries": attempted,
         "shaped_query": decision.shaped_query,
         "drug_name": decision.drug_name,
         "state_name": decision.state_name,

@@ -147,10 +147,16 @@ def answer_query(
     patient_context: dict | None = None,
     user_role: str = "anonymous",
     max_iterations: int = 2,
+    conversation_history: list[dict] | None = None,
 ) -> PipelineState:
-    """Run the full pipeline for a query. Returns the final PipelineState."""
+    """Run the full pipeline for a query. Returns the final PipelineState.
+
+    conversation_history: recent prior turns [{role, content}, ...] for follow-up
+    resolution and coherent answers.
+    """
     pipeline = get_pipeline()
-    initial = new_state(query, patient_context, user_role, max_iterations)
+    initial = new_state(query, patient_context, user_role, max_iterations,
+                        conversation_history=conversation_history)
     # recursion_limit guards against any unexpected cycling beyond our logic
     final = pipeline.invoke(initial, config={"recursion_limit": 25})
     return final

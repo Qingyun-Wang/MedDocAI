@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 
 from agents.llm import call_claude_text
-from agents.state import PipelineState
+from agents.state import PipelineState, format_conversation_history
 from models.schemas import Evidence
 
 logger = logging.getLogger(__name__)
@@ -44,17 +44,31 @@ def _format_evidence(evidence: list[Evidence]) -> str:
 
 def _build_user_prompt(state: PipelineState) -> str:
     evidence = state.get("filtered_evidence", [])
-    lines = [f"User question: {state['query']}", ""]
+    lines = []
 
+    # Recent conversation for coherent follow-ups (grounding still comes from evidence)
+    convo = format_conversation_history(state.get("conversation_history", []))
+    if convo:
+        lines.append("RECENT CONVERSATION (for continuity — do not treat as evidence; "
+                     "ground all clinical claims in the EVIDENCE below):")
+        lines.append(convo)
+        lines.append("")
+
+    lines.append(f"User question: {state['query']}")
+    lines.append("")
+
+    # If a patient is selected, their record is included in the evidence list as a
+    # 'Patient Record' item (added by the Evidence Filter). Point the model at it so
+    # it tailors the answer — no need to duplicate the patient facts here.
     ctx = state.get("patient_context")
-    if ctx:
-        conditions = ctx.get("conditions_json") or ctx.get("conditions") or []
-        cond_names = [c.get("display", "") for c in conditions][:8]
-        lines.append(f"This question is about a patient: {ctx.get('name','')}, "
-                     f"{ctx.get('age','?')}yo {ctx.get('gender','')}.")
-        if cond_names:
-            lines.append(f"Patient's active conditions: {', '.join(cond_names)}")
-        lines.append("Tailor the answer to this patient's situation where relevant.")
+    has_patient_evidence = any(
+        e.source == "patient_record" for e in evidence
+    )
+    if ctx and has_patient_evidence:
+        lines.append("This question concerns a specific patient. One of the evidence "
+                     "items below is their Patient Record — tailor your answer to their "
+                     "conditions, medications, and lab results where relevant, and cite "
+                     "it like any other source.")
         lines.append("")
 
     lines.append("EVIDENCE (cite these with [n] markers):")

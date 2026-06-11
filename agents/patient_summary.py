@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import logging
 
+from agents.evidence_filter import build_patient_evidence
 from agents.state import PipelineState
 from tools.sqlite_tool import get_patient_summary
 
@@ -26,13 +27,19 @@ logger = logging.getLogger(__name__)
 
 _NO_PATIENT_MSG = (
     "To summarise a patient, please select one from the sidebar first. "
-    "Once a patient is selected, I can show their full care summary and answer "
+    "Once a patient is selected, I can show their care summary and answer "
     "questions tailored to their record."
 )
 
-_NO_SUMMARY_MSG = (
-    "This patient does not have a pre-computed care summary yet. "
-    "You can still ask specific questions about their medications or conditions."
+_NO_DATA_MSG = (
+    "This patient does not have any clinical records on file yet, so there is "
+    "nothing to summarise. You can still ask general questions about medications, "
+    "conditions, or policy."
+)
+
+_BASIC_SUMMARY_HEADER = (
+    "_No full care summary has been generated for this patient yet, so here is a "
+    "basic profile from their available records:_\n\n"
 )
 
 
@@ -52,28 +59,41 @@ def patient_summary_node(state: PipelineState) -> dict:
             "trace": trace,
         }
 
-    # Fetch the stored summary
+    # Preferred: serve the pre-computed narrative summary
     evidence = get_patient_summary(ctx["patient_id"])
-
-    if not evidence:
-        trace = trace + ["PatientSummary: no stored summary for patient"]
+    if evidence:
+        summary = evidence[0]
+        name = summary.metadata.get("name", "this patient")
+        trace = trace + [f"PatientSummary: served stored summary for {name}"]
         return {
-            "answer": _NO_SUMMARY_MSG,
-            "citations": [],
-            "filtered_evidence": [],
+            "answer": summary.text,
+            "citations": [f"[1] {summary.citation}"],
+            "filtered_evidence": evidence,
+            "review_passed": True,        # pre-vetted content — skip the review loop
+            "trace": trace,
+        }
+
+    # Fallback: no narrative summary yet, but the patient may have structured FHIR
+    # data. Build a basic profile from it on the fly (no LLM) so the response is
+    # still useful for un-batched / new patients.
+    basic = build_patient_evidence(ctx)
+    if basic is not None:
+        trace = trace + ["PatientSummary: no narrative summary -> served basic profile"]
+        return {
+            "answer": _BASIC_SUMMARY_HEADER + basic.text,
+            "citations": [f"[1] {basic.citation}"],
+            "filtered_evidence": [basic],
             "review_passed": True,
             "trace": trace,
         }
 
-    summary = evidence[0]
-    name = summary.metadata.get("name", "this patient")
-    trace = trace + [f"PatientSummary: served stored summary for {name}"]
-
+    # Nothing on file at all
+    trace = trace + ["PatientSummary: no summary and no structured data"]
     return {
-        "answer": summary.text,
-        "citations": [f"[1] {summary.citation}"],
-        "filtered_evidence": evidence,   # so the UI can show provenance
-        "review_passed": True,           # pre-vetted content — skip the review loop
+        "answer": _NO_DATA_MSG,
+        "citations": [],
+        "filtered_evidence": [],
+        "review_passed": True,
         "trace": trace,
     }
 

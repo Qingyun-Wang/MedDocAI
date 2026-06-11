@@ -2,6 +2,8 @@
 * text=auto
 
 # Source and project configuration use LF in the repository and working tree.
+.gitattributes text eol=lf
+.gitignore text eol=lf
 *.py text eol=lf
 *.md text eol=lf
 *.txt text eol=lf
