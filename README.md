@@ -7,6 +7,7 @@
 > retrieval, cross-encoder reranking, and a RAGAS evaluation harness.
 
 <p align="left">
+  <a href="https://huggingface.co/spaces/QingyunWang/MedDocAI"><img alt="Live Demo" src="https://img.shields.io/badge/🤗_Live_Demo-HF_Spaces-FFD21E"></a>
   <img alt="Python" src="https://img.shields.io/badge/Python-3.11-3776AB?logo=python&logoColor=white">
   <img alt="LangGraph" src="https://img.shields.io/badge/LangGraph-agents-1C3C3C">
   <img alt="Claude" src="https://img.shields.io/badge/Claude-Sonnet%204.5-D97757">
@@ -15,6 +16,8 @@
   <img alt="Docker" src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white">
   <img alt="Tests" src="https://img.shields.io/badge/tests-238%20passing-2EA043">
 </p>
+
+**▶️ Try it live: [huggingface.co/spaces/QingyunWang/MedDocAI](https://huggingface.co/spaces/QingyunWang/MedDocAI)** — ask a real medication, condition, or Medicaid-policy question and watch the cited, source-grounded answer build. *(Free Space; the first request may take ~30s while it wakes.)*
 
 ---
 
@@ -185,6 +188,8 @@ the broad patient summary. Both are diagnosed and queued — the point of the ha
 ---
 
 ## Quickstart
+
+> **Just want to try it?** No setup needed — use the **[live demo on HF Spaces](https://huggingface.co/spaces/QingyunWang/MedDocAI)**. The steps below are for running it yourself.
 
 ### Run with Docker (recommended)
 
