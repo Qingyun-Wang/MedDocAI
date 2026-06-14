@@ -1,0 +1,44 @@
+# Keep the build context small — data/ is bind-mounted at runtime, not baked in.
+
+# Large / runtime data (mounted via docker-compose volume instead)
+data/
+# ...but DO ship the small SQLite DB (4.5MB) so hosted deploys (HF Spaces) that
+# have no bind-mount still get patient summaries, pricing, and eligibility.
+!data/meddocai.db
+
+# Virtualenvs & caches
+venv/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Git & IDE
+.git/
+.gitignore
+.gitattributes
+.claude/
+.codex/
+.idea/
+.vscode/
+
+# Local-only working docs (gitignored already; not needed in image)
+CLAUDE.md
+PROJECT_PLAN.md
+executed_steps.md
+data_examples.md
+synthea_data_study.md
+
+# Secrets are passed via env_file at runtime, not baked into the image
+.env
+
+# Eval run artifacts
+evaluation/*.json
+evaluation/*.md
+!evaluation/eval_dataset.json
+
+# OS noise
+.DS_Store
+Thumbs.db

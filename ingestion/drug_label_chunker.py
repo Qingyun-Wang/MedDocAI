@@ -360,7 +360,8 @@ def run(label_dir: str = LABEL_DIR, dry_run: bool = False) -> dict:
         )
 
     openai_client = OpenAI(api_key=openai_key)
-    qdrant_client = QdrantClient(path=QDRANT_PATH)
+    from vector_store.client import get_qdrant_client
+    qdrant_client = get_qdrant_client()
 
     logger.info("Embedding and upserting %d chunks ...", len(chunks))
     upserted = embed_and_upsert(chunks, openai_client, qdrant_client)

@@ -32,6 +32,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import FieldCondition, Filter, MatchValue
 
 from models.schemas import Evidence
+from vector_store.client import get_qdrant_client
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env"),
             override=True)
@@ -41,7 +42,6 @@ logger = logging.getLogger(__name__)
 # Config
 # ---------------------------------------------------------------------------
 
-QDRANT_PATH   = "data/qdrant_storage"
 EMBED_MODEL   = "text-embedding-3-small"
 DRUG_LABELS   = "drug_labels"
 MEDLINEPLUS   = "medlineplus"
@@ -67,7 +67,7 @@ def _get_openai() -> OpenAI:
 def _get_qdrant() -> QdrantClient:
     global _qdrant_client
     if _qdrant_client is None:
-        _qdrant_client = QdrantClient(path=QDRANT_PATH)
+        _qdrant_client = get_qdrant_client()
     return _qdrant_client
 
 

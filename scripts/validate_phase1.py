@@ -33,6 +33,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env"), override=True)
 
+from vector_store.client import get_qdrant_client
+
 logging.basicConfig(level=logging.WARNING)  # suppress INFO noise during validation
 
 # ---------------------------------------------------------------------------
@@ -182,7 +184,7 @@ def validate_qdrant_ingestion(skip_embedding: bool = False):
         return False
 
     from qdrant_client import QdrantClient
-    client = QdrantClient(path="data/qdrant_storage")
+    client = get_qdrant_client()
     existing = {c.name for c in client.get_collections().collections}
     client.close()
 
@@ -199,7 +201,7 @@ def validate_qdrant_ingestion(skip_embedding: bool = False):
             check("Qdrant", "drug_labels ingestion", stats["upserted"] > 40000,
                   f"{stats['upserted']:,} points upserted, cost ~${stats['estimated_cost_usd']:.2f}")
     else:
-        client2 = QdrantClient(path="data/qdrant_storage")
+        client2 = get_qdrant_client()
         count = client2.count("drug_labels").count
         client2.close()
         if count == 0 and not skip_embedding:
@@ -213,7 +215,7 @@ def validate_qdrant_ingestion(skip_embedding: bool = False):
             check("Qdrant", "drug_labels collection populated", count > 40000, f"{count:,} points")
 
     # MedlinePlus
-    client3 = QdrantClient(path="data/qdrant_storage")
+    client3 = get_qdrant_client()
     existing2 = {c.name for c in client3.get_collections().collections}
     client3.close()
 
@@ -227,7 +229,7 @@ def validate_qdrant_ingestion(skip_embedding: bool = False):
             check("Qdrant", "medlineplus ingestion", stats["upserted"] == 1102,
                   f"{stats['upserted']:,} points upserted")
     else:
-        client4 = QdrantClient(path="data/qdrant_storage")
+        client4 = get_qdrant_client()
         count = client4.count("medlineplus").count
         client4.close()
         check("Qdrant", "medlineplus collection populated", count == 1102, f"{count:,} points")
@@ -250,7 +252,7 @@ def validate_qdrant_search():
     from qdrant_client import QdrantClient
     from openai import OpenAI
 
-    client = QdrantClient(path="data/qdrant_storage")
+    client = get_qdrant_client()
     existing = {c.name for c in client.get_collections().collections}
 
     if "drug_labels" not in existing or "medlineplus" not in existing:

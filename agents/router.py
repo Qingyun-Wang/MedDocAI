@@ -30,6 +30,8 @@ INTENT_TOOL_MAP: dict[str, list[str]] = {
     "policy_eligibility":  ["lookup_state_eligibility", "lookup_drug_price"],
     "condition_education": ["search_medlineplus", "explain_condition_snomed"],
     "patient_summary":     [],   # handled by patient_summary_node (serves stored summary)
+    "direct_answer":       [],   # fast path — no retrieval; answered from chat history
+                                 # + patient context by the Answer Generator directly
     "general":             ["search_medlineplus", "search_drug_labels"],
 }
 
@@ -55,6 +57,13 @@ Intent definitions:
 - condition_education: questions asking to explain a health condition or topic in
   plain language
 - patient_summary: requests to summarise or review a specific patient's situation
+- direct_answer: conversational or meta questions that need NO database/API retrieval —
+  they can be answered entirely from the conversation history and/or the patient context
+  already provided. Examples: "what was my last question?", "can you repeat that?",
+  "what did you just tell me?", greetings ("hi", "thanks", "goodbye"), "who are you?",
+  "what can you help me with?". IMPORTANT: any question that asks for medical facts,
+  drug information, policy data, or anything verifiable in our sources is NOT
+  direct_answer — even if it sounds casual.
 - general: anything else, or unclear
 
 Rules:

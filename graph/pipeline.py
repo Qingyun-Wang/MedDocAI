@@ -47,12 +47,33 @@ logger = logging.getLogger(__name__)
 
 def _route_after_router(
     state: PipelineState,
-) -> Literal["patient_summary", "retrieval"]:
-    """Route directly to the patient-summary node for that intent (serving the
-    pre-computed summary), otherwise into the normal retrieval pipeline."""
-    if state.get("intent") == "patient_summary":
+) -> Literal["patient_summary", "answer_generator", "retrieval"]:
+    """Branch after the Router:
+    - patient_summary intent -> dedicated node (serves the pre-computed summary)
+    - direct_answer intent   -> FAST PATH straight to the Answer Generator
+      (conversational/meta questions need no retrieval — skips Agents 2 & 3)
+    - everything else        -> the normal retrieval pipeline
+    """
+    intent = state.get("intent")
+    if intent == "patient_summary":
         return "patient_summary"
+    if intent == "direct_answer":
+        return "answer_generator"
     return "retrieval"
+
+
+def _route_after_answer(
+    state: PipelineState,
+) -> Literal["reviewer", "safety"]:
+    """Branch after the Answer Generator:
+    - direct_answer fast path -> straight to Safety. There is no retrieved evidence
+      to verify faithfulness against, so the Reviewer would false-fail these
+      conversational answers (the Challenge-#12 failure mode) and waste retries.
+    - normal path -> the Reviewer (corrective-RAG quality gate).
+    """
+    if state.get("intent") == "direct_answer":
+        return "safety"
+    return "reviewer"
 
 
 def _route_after_review(
@@ -96,20 +117,32 @@ def build_pipeline():
     graph.add_node("safety", safety_node)
 
     # Entry: router, then branch — patient_summary serves the stored summary,
+    # direct_answer fast-paths to the Answer Generator (no retrieval),
     # everything else goes through the normal retrieval pipeline.
     graph.set_entry_point("router")
     graph.add_conditional_edges(
         "router",
         _route_after_router,
         {
-            "patient_summary": "patient_summary",
-            "retrieval":       "retrieval",
+            "patient_summary":  "patient_summary",
+            "answer_generator": "answer_generator",   # direct_answer fast path
+            "retrieval":        "retrieval",
         },
     )
     graph.add_edge("patient_summary", "safety")
     graph.add_edge("retrieval", "evidence_filter")
     graph.add_edge("evidence_filter", "answer_generator")
-    graph.add_edge("answer_generator", "reviewer")
+
+    # After the Answer Generator: direct answers skip the reviewer (no evidence
+    # to verify against); normal answers go through the corrective-RAG review.
+    graph.add_conditional_edges(
+        "answer_generator",
+        _route_after_answer,
+        {
+            "reviewer": "reviewer",
+            "safety":   "safety",
+        },
+    )
 
     # Conditional edge after reviewer (the corrective loop)
     graph.add_conditional_edges(

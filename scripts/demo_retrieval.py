@@ -33,6 +33,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".env"), override=True)
 
+from vector_store.client import get_qdrant_client
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -186,7 +188,7 @@ def demo_qdrant_drug_labels():
     from qdrant_client import QdrantClient
 
     oai    = OpenAI(api_key=openai_key)
-    client = QdrantClient(path="data/qdrant_storage")
+    client = get_qdrant_client()
 
     def search(query: str, limit: int = 3):
         vec = oai.embeddings.create(
@@ -241,7 +243,7 @@ def demo_qdrant_medlineplus():
     from qdrant_client import QdrantClient
 
     oai    = OpenAI(api_key=openai_key)
-    client = QdrantClient(path="data/qdrant_storage")
+    client = get_qdrant_client()
 
     def search(query: str, limit: int = 3):
         vec = oai.embeddings.create(
@@ -445,7 +447,7 @@ def demo_end_to_end():
         return
 
     oai    = OpenAI(api_key=openai_key)
-    client = QdrantClient(path="data/qdrant_storage")
+    client = get_qdrant_client()
 
     def embed(text: str) -> list[float]:
         return oai.embeddings.create(

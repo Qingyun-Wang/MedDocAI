@@ -42,7 +42,7 @@ def _format_evidence(evidence: list[Evidence]) -> str:
     return "\n\n".join(lines)
 
 
-def _build_user_prompt(state: PipelineState) -> str:
+def _build_user_prompt(state: PipelineState, direct_mode: bool = False) -> str:
     evidence = state.get("filtered_evidence", [])
     lines = []
 
@@ -71,9 +71,10 @@ def _build_user_prompt(state: PipelineState) -> str:
                      "it like any other source.")
         lines.append("")
 
-    lines.append("EVIDENCE (cite these with [n] markers):")
-    lines.append(_format_evidence(evidence) if evidence
-                 else "(no evidence retrieved)")
+    if evidence or not direct_mode:
+        lines.append("EVIDENCE (cite these with [n] markers):")
+        lines.append(_format_evidence(evidence) if evidence
+                     else "(no evidence retrieved)")
 
     feedback = state.get("reviewer_feedback")
     if feedback and state.get("route_back_to") == "answer_generator":
@@ -82,19 +83,54 @@ def _build_user_prompt(state: PipelineState) -> str:
         lines.append(f"  {feedback}")
 
     lines.append("")
-    lines.append("Write a clear, well-structured answer grounded in the evidence above. "
-                 "Use [n] citation markers. If the evidence does not cover the question, "
-                 "say so honestly rather than guessing.")
+    if direct_mode:
+        lines.append(
+            "This is a conversational or meta question — no document retrieval was "
+            "performed. Answer naturally and briefly from the conversation history "
+            "and the patient context above (if any). Do NOT invent clinical facts, "
+            "statistics, or sources. If the user asks for medical/policy specifics "
+            "you don't have here, suggest they ask it as a direct question so you "
+            "can look it up properly."
+        )
+    else:
+        lines.append("Write a clear, well-structured answer grounded in the evidence above. "
+                     "Use [n] citation markers. If the evidence does not cover the question, "
+                     "say so honestly rather than guessing.")
     return "\n".join(lines)
 
 
 def answer_generator_node(state: PipelineState) -> dict:
-    """LangGraph node: generate a grounded answer with citation markers."""
+    """LangGraph node: generate a grounded answer with citation markers.
+
+    Two modes:
+    - Normal: answers from the retrieved+filtered evidence (then goes to the Reviewer).
+    - direct_answer intent (fast path): retrieval/filter were skipped — answers from
+      conversation history + patient context. The patient record is injected here as
+      evidence [1] (normally the Evidence Filter does this). Sets review_passed=True
+      because there is no retrieved evidence to verify faithfulness against — running
+      the Reviewer would false-fail conversational answers (cf. Challenge #12).
+    """
     role = state.get("user_role", "anonymous")
+    direct_mode = state.get("intent") == "direct_answer"
+
+    updates: dict = {}
+    if direct_mode:
+        # Filter was skipped — inject the patient record ourselves (if available)
+        from agents.evidence_filter import build_patient_evidence
+        ctx = state.get("patient_context")
+        evidence = []
+        if ctx:
+            patient_ev = build_patient_evidence(ctx)
+            if patient_ev is not None:
+                evidence = [patient_ev]
+        state["filtered_evidence"] = evidence
+        updates["filtered_evidence"] = evidence
+        updates["review_passed"] = True   # no evidence to verify — skip the review loop
+
     answer = call_claude_text(
         system=_system_for_role(role),
-        user=_build_user_prompt(state),
-        max_tokens=1200,
+        user=_build_user_prompt(state, direct_mode=direct_mode),
+        max_tokens=600 if direct_mode else 1200,
     )
 
     # Build the citation list from the evidence the model was given
@@ -102,13 +138,17 @@ def answer_generator_node(state: PipelineState) -> dict:
     citations = [f"[{i}] {e.citation}" for i, e in enumerate(evidence, 1)]
 
     trace = state.get("trace", [])
-    trace = trace + [f"AnswerGen: produced {len(answer)} chars, {len(citations)} citations"]
+    trace = trace + [
+        f"AnswerGen: produced {len(answer)} chars, {len(citations)} citations"
+        + (" [DIRECT: no retrieval, skipping reviewer]" if direct_mode else "")
+    ]
 
-    return {
+    updates.update({
         "answer": answer,
         "citations": citations,
         "trace": trace,
-    }
+    })
+    return updates
 
 
 # ---------------------------------------------------------------------------

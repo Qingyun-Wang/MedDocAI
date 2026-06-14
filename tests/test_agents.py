@@ -62,11 +62,12 @@ class TestRouter:
         from agents.router import INTENT_TOOL_MAP
         for intent in INTENTS:
             assert intent in INTENT_TOOL_MAP
-        # All retrieval intents have tools; patient_summary is intentionally empty
-        # because it's handled by the dedicated patient_summary_node (serves the
-        # pre-computed summary, bypassing tool retrieval).
+        # All retrieval intents have tools. Two are intentionally empty:
+        # - patient_summary: handled by patient_summary_node (serves stored summary)
+        # - direct_answer:   fast path — answered from chat history + patient context,
+        #                    no retrieval at all
         for intent in INTENTS:
-            if intent == "patient_summary":
+            if intent in ("patient_summary", "direct_answer"):
                 assert INTENT_TOOL_MAP[intent] == []
             else:
                 assert len(INTENT_TOOL_MAP[intent]) > 0
@@ -194,6 +195,43 @@ class TestAnswerGenerator:
         assert _system_for_role("patient") == _SYSTEM_PATIENT
         assert _system_for_role("anonymous") == _SYSTEM_PATIENT
 
+    def test_direct_mode_sets_review_passed(self, monkeypatch):
+        """direct_answer fast path skips the reviewer -> must mark review_passed."""
+        import agents.answer_generator as ag
+        monkeypatch.setattr(ag, "call_claude_text",
+                            lambda **kw: "Your last question was about metformin.")
+        state = new_state("what was my last question?")
+        state["intent"] = "direct_answer"
+        out = ag.answer_generator_node(state)
+        assert out["review_passed"] is True
+        assert out["filtered_evidence"] == []   # anonymous: no patient record
+
+    def test_direct_mode_injects_patient_record(self, monkeypatch):
+        """With a patient selected, direct mode injects the patient record as evidence."""
+        import agents.answer_generator as ag
+        monkeypatch.setattr(ag, "call_claude_text", lambda **kw: "You're welcome!")
+        state = new_state("thanks!", patient_context={
+            "patient_id": "p1", "name": "Test", "age": 60, "gender": "female",
+            "conditions_json": [{"display": "Diabetes", "snomed_code": "x"}],
+            "medications_json": [], "labs_json": [],
+        }, user_role="care_manager")
+        state["intent"] = "direct_answer"
+        out = ag.answer_generator_node(state)
+        assert out["review_passed"] is True
+        assert len(out["filtered_evidence"]) == 1
+        assert out["filtered_evidence"][0].source == "patient_record"
+        assert len(out["citations"]) == 1
+
+    def test_normal_mode_does_not_set_review_passed(self, monkeypatch):
+        """Normal answers must still go through the reviewer."""
+        import agents.answer_generator as ag
+        monkeypatch.setattr(ag, "call_claude_text", lambda **kw: "Answer [1].")
+        state = new_state("metformin warnings?")
+        state["intent"] = "medication_info"
+        state["filtered_evidence"] = [_ev(title="Metformin", text="warnings...")]
+        out = ag.answer_generator_node(state)
+        assert "review_passed" not in out
+
 
 # ---------------------------------------------------------------------------
 # Reviewer (mocked LLM)
@@ -315,6 +353,26 @@ class TestSafety:
 # ---------------------------------------------------------------------------
 
 class TestGraphRouting:
+    def test_direct_answer_routes_to_answer_generator(self):
+        """The fast path: direct_answer skips retrieval + filter entirely."""
+        from graph.pipeline import _route_after_router
+        state = new_state("what was my last question?")
+        state["intent"] = "direct_answer"
+        assert _route_after_router(state) == "answer_generator"
+
+    def test_direct_answer_skips_reviewer(self):
+        """After the Answer Generator, direct answers go straight to safety."""
+        from graph.pipeline import _route_after_answer
+        state = new_state("thanks!")
+        state["intent"] = "direct_answer"
+        assert _route_after_answer(state) == "safety"
+
+    def test_normal_intent_goes_to_reviewer(self):
+        from graph.pipeline import _route_after_answer
+        state = new_state("metformin warnings?")
+        state["intent"] = "medication_info"
+        assert _route_after_answer(state) == "reviewer"
+
     def test_route_to_safety_on_pass(self):
         from graph.pipeline import _route_after_review
         state = new_state("q")

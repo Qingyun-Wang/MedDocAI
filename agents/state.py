@@ -27,6 +27,9 @@ INTENTS = [
     "policy_eligibility",   # Medicaid eligibility, drug pricing, policy
     "condition_education",  # what is condition X, patient education
     "patient_summary",      # summarise this patient's situation (care manager)
+    "direct_answer",        # conversational/meta — answerable from chat history +
+                            # patient context alone, NO retrieval needed
+                            # (e.g. "what was my last question?", greetings, thanks)
     "general",              # fallback / out-of-scope
 ]
 

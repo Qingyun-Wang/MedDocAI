@@ -1,0 +1,48 @@
+# MedDocAI — local stack
+#
+#   qdrant : vector DB as a standalone server (own named volume)
+#   app    : Streamlit UI + LangGraph pipeline, connects to qdrant over HTTP
+#
+# First run:
+#   1. Ensure .env has ANTHROPIC_API_KEY + OPENAI_API_KEY (see .env example).
+#   2. Ensure data/ holds the Phase-1 artifacts (meddocai.db + qdrant_storage).
+#   3. docker compose up --build
+#      -> app seeds the qdrant server from data/qdrant_storage (once), then
+#         serves the UI at http://localhost:8501
+#
+# The qdrant server keeps its data in the `qdrant_data` named volume, separate
+# from the local embedded store under ./data that is used only as the seed source.
+
+services:
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: meddocai-qdrant
+    ports:
+      - "6333:6333"   # REST API
+      - "6334:6334"   # gRPC
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+  app:
+    build: .
+    container_name: meddocai-app
+    depends_on:
+      - qdrant
+    env_file:
+      - .env
+    environment:
+      # Server mode: routes vector_store.client.get_qdrant_client() to the server
+      QDRANT_URL: "http://qdrant:6333"
+      # Seed source for the migration step (host's local embedded store)
+      QDRANT_PATH: "data/qdrant_storage"
+    ports:
+      - "8501:8501"
+    volumes:
+      # Mount the data dir read-write: provides the SQLite DB (meddocai.db),
+      # FHIR files, and the local qdrant_storage used to seed the server.
+      - ./data:/app/data
+    restart: unless-stopped
+
+volumes:
+  qdrant_data:

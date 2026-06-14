@@ -26,7 +26,8 @@ langchain-anthropic>=0.2
 langsmith>=0.1
 
 # Evaluation (Phase 4)
-ragas>=0.1
+ragas>=0.4              # needs evaluation/ragas_compat.py shim with langchain-core 1.x
+langchain-openai>=1.0  # RAGAS judge (gpt-4o-mini) + embeddings
 
 # Frontend (Phase 3)
 streamlit>=1.35

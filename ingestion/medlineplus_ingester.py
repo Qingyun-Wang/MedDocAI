@@ -358,10 +358,11 @@ def run(medlineplus_dir: str = MEDLINEPLUS_DIR, dry_run: bool = False) -> dict:
     if not openai_key:
         raise EnvironmentError("OPENAI_API_KEY not set.")
 
+    from vector_store.client import get_qdrant_client
     upserted = embed_and_upsert(
         chunks,
         OpenAI(api_key=openai_key),
-        QdrantClient(path=QDRANT_PATH),
+        get_qdrant_client(),
     )
     stats["upserted"] = upserted
     return stats

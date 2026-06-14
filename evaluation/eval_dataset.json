@@ -1,0 +1,253 @@
+{
+  "version": "1.0",
+  "description": "MedDocAI RAGAS evaluation set - 30 curated questions across intents. References are grounded in FDA label content, CMS eligibility data (as loaded in SQLite), live openFDA recall/shortage data (as of 2026-06), and the 10 demo patients' FHIR records.",
+  "categories": {
+    "med_anon": "Medication question, anonymous (10)",
+    "med_patient": "Medication question with patient context (10)",
+    "policy": "Medicaid policy / eligibility / pricing (5)",
+    "recall": "Drug recall / shortage, live API (3)",
+    "care_mgr": "Care-manager clinical question with patient context (2)"
+  },
+  "questions": [
+    {
+      "id": "med_anon_01",
+      "category": "med_anon",
+      "question": "What are the main warnings for warfarin?",
+      "user_role": "anonymous",
+      "patient": null,
+      "reference": "Warfarin carries a boxed warning for major or fatal bleeding, its most serious risk. Bleeding risk is higher during the starting period and with higher doses or interacting drugs. Patients require regular INR monitoring, and warfarin is contraindicated in pregnancy except with mechanical heart valves. Signs of bleeding such as unusual bruising, blood in urine or stool, or prolonged bleeding require immediate medical attention."
+    },
+    {
+      "id": "med_anon_02",
+      "category": "med_anon",
+      "question": "What is the most serious warning for metformin?",
+      "user_role": "anonymous",
+      "patient": null,
+      "reference": "Metformin's most serious warning is a boxed warning for lactic acidosis, a rare but potentially fatal accumulation of lactic acid in the blood. Risk factors include renal impairment, age 65 or older, contrast imaging procedures, hypoxic states, and excessive alcohol. Metformin is contraindicated in severe renal impairment (eGFR below 30 mL/min/1.73 m2) and in metabolic acidosis including diabetic ketoacidosis."
+    },
+    {
+      "id": "med_anon_03",
+      "category": "med_anon",
+      "question": "What are the key warnings for lisinopril?",
+      "user_role": "anonymous",
+      "patient": null,
+      "reference": "Lisinopril carries a boxed warning for fetal toxicity - it must be discontinued as soon as pregnancy is detected. Key warnings include angioedema of the face, lips, tongue or larynx (which can be fatal and is more frequent in Black patients), hypotension, hyperkalemia, and renal impairment. A persistent dry cough is a common ACE-inhibitor side effect."
+    },
+    {
+      "id": "med_anon_04",
+      "category": "med_anon",
+      "question": "What are the risks of taking ibuprofen?",
+      "user_role": "anonymous",
+      "patient": null,
+      "reference": "Ibuprofen, an NSAID, increases the risk of serious cardiovascular thrombotic events including heart attack and stroke, and of serious gastrointestinal bleeding, ulceration and perforation, which can be fatal. GI risk is higher in the elderly and with longer use. Ibuprofen can also cause kidney injury and severe allergic reactions, especially in people allergic to aspirin, and should not be used right before or after heart bypass (CABG) surgery."
+    },
+    {
+      "id": "med_anon_05",
+      "category": "med_anon",
+      "question": "What muscle-related risks does atorvastatin have?",
+      "user_role": "anonymous",
+      "patient": null,
+      "reference": "Atorvastatin can cause myopathy (muscle pain, tenderness or weakness with elevated creatine kinase) and rarely rhabdomyolysis with acute kidney failure. There have also been rare reports of immune-mediated necrotizing myopathy. Risk increases with higher doses, advanced age, hypothyroidism, renal impairment, and interacting drugs such as cyclosporine, fibrates, and strong CYP3A4 inhibitors. Patients should promptly report unexplained muscle pain or weakness."
+    },
+    {
+      "id": "med_anon_06",
+      "category": "med_anon",
+      "question": "Who should not take amoxicillin?",
+      "user_role": "anonymous",
+      "patient": null,
+      "reference": "Amoxicillin is contraindicated in people with a history of serious hypersensitivity reactions to amoxicillin or to other penicillins, such as anaphylaxis or Stevens-Johnson syndrome. Serious and occasionally fatal anaphylactic reactions have occurred, more likely in people with a history of penicillin allergy or sensitivity to multiple allergens. Caution also applies in people with mononucleosis, in whom amoxicillin frequently causes a rash."
+    },
+    {
+      "id": "med_anon_07",
+      "category": "med_anon",
+      "question": "What is the boxed warning for clopidogrel?",
+      "user_role": "anonymous",
+      "patient": null,
+      "reference": "Clopidogrel carries a boxed warning about diminished antiplatelet effect in patients who are CYP2C19 poor metabolizers. Clopidogrel is a prodrug activated by CYP2C19; poor metabolizers treated at recommended doses have higher cardiovascular event rates after acute coronary syndrome or PCI. Genetic tests can identify poor metabolizers, and alternative antiplatelet therapy should be considered for them. The main general risk of clopidogrel is bleeding."
+    },
+    {
+      "id": "med_anon_08",
+      "category": "med_anon",
+      "question": "What is the main risk of insulin therapy?",
+      "user_role": "anonymous",
+      "patient": null,
+      "reference": "The main risk of insulin therapy is hypoglycemia (low blood sugar), which can be severe and life-threatening, causing confusion, seizures, unconsciousness or death. Insulin can also cause hypokalemia (low potassium), which can lead to respiratory paralysis and arrhythmias. Dose changes, illness, exercise, missed meals, and drug interactions affect hypoglycemia risk. Insulin must never be shared between patients even with a changed needle."
+    },
+    {
+      "id": "med_anon_09",
+      "category": "med_anon",
+      "question": "What should I know about overusing albuterol inhalers?",
+      "user_role": "anonymous",
+      "patient": null,
+      "reference": "Albuterol can cause paradoxical bronchospasm - the airways tighten instead of opening - which can be life-threatening and requires stopping the drug immediately. Needing more albuterol than usual is a sign of deteriorating asthma that needs medical reassessment. Albuterol can also cause cardiovascular effects such as increased heart rate and blood pressure, and excessive use of inhaled sympathomimetics has been associated with fatalities."
+    },
+    {
+      "id": "med_anon_10",
+      "category": "med_anon",
+      "question": "What are the serious side effects of simvastatin?",
+      "user_role": "anonymous",
+      "patient": null,
+      "reference": "Simvastatin's serious risks are myopathy and rhabdomyolysis - muscle breakdown that can cause acute kidney failure and rarely death. Risk is dose-related and increases with the 80 mg dose, advanced age, female sex, renal impairment, hypothyroidism, and interacting drugs (strong CYP3A4 inhibitors such as certain antibiotics and antifungals, plus cyclosporine, gemfibrozil and danazol are contraindicated). Liver enzyme abnormalities can also occur. Unexplained muscle pain or weakness should be reported promptly."
+    },
+    {
+      "id": "med_pat_01",
+      "category": "med_patient",
+      "question": "Is metformin safe for this patient?",
+      "user_role": "care_manager",
+      "patient": "Evan454",
+      "reference": "This patient is a 58-year-old woman with diabetes, diabetic renal disease and microalbuminuria (microalbumin-creatinine ratio 211 mg/g), taking metformin ER 500 mg. Metformin is contraindicated in severe renal impairment (eGFR below 30) and carries a boxed warning for lactic acidosis, with renal impairment a major risk factor. Her record shows kidney involvement but no eGFR value, so current renal function testing is needed before her metformin safety can be fully assessed. Her history of cardiac arrest also warrants caution since hypoxic states increase lactic acidosis risk."
+    },
+    {
+      "id": "med_pat_02",
+      "category": "med_patient",
+      "question": "What should this patient know about taking clopidogrel?",
+      "user_role": "patient",
+      "patient": "Cali421",
+      "reference": "This 90-year-old man takes clopidogrel 75 mg, appropriate for his coronary heart disease and prior myocardial infarction. Clopidogrel reduces the chance of another heart attack or stroke but increases bleeding risk - he should watch for unusual bruising, blood in urine or stool, or bleeding that won't stop, and tell providers he takes it before any surgery or dental work. Clopidogrel has a boxed warning that CYP2C19 poor metabolizers get less benefit; genetic testing can identify this. He should not stop clopidogrel without talking to his prescriber."
+    },
+    {
+      "id": "med_pat_03",
+      "category": "med_patient",
+      "question": "Is it safe for this patient to use his albuterol inhaler regularly?",
+      "user_role": "care_manager",
+      "patient": "Jude119",
+      "reference": "This 76-year-old man with asthma, hypertension, gout and a prior stroke uses an albuterol rescue inhaler plus fluticasone. Albuterol is appropriate for rescue use, but regular or increasing need for it signals worsening asthma control that needs reassessment. Albuterol's cardiovascular effects (increased heart rate and blood pressure) matter for him given hypertension and stroke history, and paradoxical bronchospasm is a rare but serious risk requiring immediate discontinuation."
+    },
+    {
+      "id": "med_pat_04",
+      "category": "med_patient",
+      "question": "What are the risks of this patient's pain medication?",
+      "user_role": "care_manager",
+      "patient": "Leopold359",
+      "reference": "This 63-year-old woman with diabetes takes hydrocodone-acetaminophen (7.5/325 mg). This opioid combination carries boxed warnings for addiction, abuse and misuse, life-threatening respiratory depression, accidental ingestion, interaction with benzodiazepines and other CNS depressants, and acetaminophen-related hepatotoxicity - doses above 4 grams of acetaminophen per day risk severe liver injury. Constipation, sedation and falls are also concerns. Use should be at the lowest effective dose for the shortest duration."
+    },
+    {
+      "id": "med_pat_05",
+      "category": "med_patient",
+      "question": "Given her diabetes and kidney disease, what monitoring does metformin require for this patient?",
+      "user_role": "care_manager",
+      "patient": "Jayce827",
+      "reference": "This 60-year-old woman has diabetes with diabetic renal disease and takes metformin ER. Metformin requires renal function monitoring - eGFR should be checked before starting and at least annually, more often with renal impairment, because metformin is contraindicated below eGFR 30 and lactic acidosis risk rises with declining kidney function. Her glucose of 171 mg/dL suggests suboptimal control to address. Periodic vitamin B12 measurement is recommended on long-term metformin, and the drug should be held around iodinated contrast imaging."
+    },
+    {
+      "id": "med_pat_06",
+      "category": "med_patient",
+      "question": "Can this patient safely use nitroglycerin with his other medications?",
+      "user_role": "care_manager",
+      "patient": "Cali421",
+      "reference": "This 90-year-old man uses nitroglycerin spray for coronary heart disease alongside amlodipine, captopril, clopidogrel and metformin. Nitroglycerin is absolutely contraindicated with PDE-5 inhibitors (sildenafil and similar drugs) due to severe hypotension. His amlodipine and captopril also lower blood pressure, so additive hypotension, dizziness and falls are real risks at his age - blood pressure should be monitored and he should sit when using the spray. Tolerance can develop with excessive use; only the smallest effective dose should be used."
+    },
+    {
+      "id": "med_pat_07",
+      "category": "med_patient",
+      "question": "What do this patient's abnormal lab results suggest?",
+      "user_role": "care_manager",
+      "patient": "Evan454",
+      "reference": "Her microalbumin-creatinine ratio of 211 mg/g (normal under 30) indicates significant albuminuria, consistent with her diagnosed diabetic renal disease - an early marker of diabetic kidney damage. Elevated LDL (130), total cholesterol (225) and triglycerides (196) add cardiovascular risk on top of her diabetes, hypertension and cardiac arrest history. Glucose of 107 is borderline. Together these suggest priorities of kidney function follow-up (eGFR), lipid management, and continued glycemic control."
+    },
+    {
+      "id": "med_pat_08",
+      "category": "med_patient",
+      "question": "Is clopidogrel appropriate given this patient's stroke history?",
+      "user_role": "care_manager",
+      "patient": "Jude119",
+      "reference": "Yes - clopidogrel is indicated for secondary prevention in patients with a history of recent stroke, reducing the rate of new ischemic events. For this 76-year-old man with a prior stroke, that is an appropriate use. The trade-off is increased bleeding risk, so he should be monitored for unusual bleeding and providers should know before procedures. The boxed warning about CYP2C19 poor metabolizers (reduced effectiveness) applies; genetic testing is an option if treatment failure is suspected."
+    },
+    {
+      "id": "med_pat_09",
+      "category": "med_patient",
+      "question": "What does this patient's HbA1c of 6.1 mean?",
+      "user_role": "patient",
+      "patient": "Brenda283",
+      "reference": "An HbA1c of 6.1% falls in the prediabetes range (5.7% to 6.4%), matching this 50-year-old man's prediabetes diagnosis. The A1C test reflects average blood sugar over about the past three months. Prediabetes means blood sugar is higher than normal but not yet diabetes - without lifestyle changes such as weight management, healthier eating and regular physical activity, it often progresses to type 2 diabetes. His low-normal glucose reading of 69 mg/dL shows day-to-day variation, which is why A1C is used for the longer-term picture."
+    },
+    {
+      "id": "med_pat_10",
+      "category": "med_patient",
+      "question": "What should this patient watch for while taking Augmentin?",
+      "user_role": "patient",
+      "patient": "Evan454",
+      "reference": "Augmentin (amoxicillin-clavulanate) requires watching for allergic reactions - hives, swelling of the face or throat, or trouble breathing need emergency care, especially with any penicillin allergy history. Diarrhea is common, and severe or persistent diarrhea could indicate C. difficile infection. Augmentin can rarely cause liver problems (jaundice, dark urine, abdominal pain). She should complete the full course. Her diabetes does not contraindicate Augmentin, but illness itself can affect blood sugar control."
+    },
+    {
+      "id": "policy_01",
+      "category": "policy",
+      "question": "What is the Medicaid income limit for pregnant women in Texas?",
+      "user_role": "anonymous",
+      "patient": null,
+      "reference": "In Texas, pregnant women qualify for Medicaid with household income up to 198% of the Federal Poverty Level. Texas has not adopted the ACA adult Medicaid expansion."
+    },
+    {
+      "id": "policy_02",
+      "category": "policy",
+      "question": "What is the Medicaid income limit for infants under age 1 in California?",
+      "user_role": "anonymous",
+      "patient": null,
+      "reference": "In California, infants under age 1 are eligible for Medicaid with household income up to 261% of the Federal Poverty Level. California has also adopted the adult Medicaid expansion at 133% FPL."
+    },
+    {
+      "id": "policy_03",
+      "category": "policy",
+      "question": "Has Virginia adopted Medicaid expansion for adults?",
+      "user_role": "anonymous",
+      "patient": null,
+      "reference": "According to the CMS eligibility-levels dataset used here, Virginia is listed as not having adopted the ACA adult Medicaid expansion. Its children's Medicaid limits are 143% FPL across age groups and pregnant women qualify at 143% FPL."
+    },
+    {
+      "id": "policy_04",
+      "category": "policy",
+      "question": "What income level qualifies adults for expanded Medicaid in New York?",
+      "user_role": "anonymous",
+      "patient": null,
+      "reference": "New York has adopted adult Medicaid expansion with eligibility up to 200% of the Federal Poverty Level - higher than the standard 133% expansion level used in most expansion states. New York's limits for children ages 0-1 and pregnant women are 218% FPL."
+    },
+    {
+      "id": "policy_05",
+      "category": "policy",
+      "question": "How much does generic lisinopril cost per tablet under Medicaid?",
+      "user_role": "anonymous",
+      "patient": null,
+      "reference": "Per the NADAC (National Average Drug Acquisition Cost) 2026 data, generic lisinopril 10 mg tablets cost approximately $0.019 per tablet - about two cents per tablet."
+    },
+    {
+      "id": "recall_01",
+      "category": "recall",
+      "question": "Is there a current recall on semaglutide?",
+      "user_role": "anonymous",
+      "patient": null,
+      "reference": "Yes. There are ongoing Class II FDA recalls affecting semaglutide (Wegovy) injection products, recalled due to lack of assurance of sterility."
+    },
+    {
+      "id": "recall_02",
+      "category": "recall",
+      "question": "Is methotrexate currently in shortage?",
+      "user_role": "anonymous",
+      "patient": null,
+      "reference": "Yes. FDA drug shortage records list methotrexate sodium injection with current shortage status, and some methotrexate injection presentations are listed as to-be-discontinued."
+    },
+    {
+      "id": "recall_03",
+      "category": "recall",
+      "question": "Are there any ongoing recalls of alprazolam?",
+      "user_role": "anonymous",
+      "patient": null,
+      "reference": "Yes. There is an ongoing Class II recall of alprazolam 1 mg tablets, recalled by a repackaging firm due to current good manufacturing practice (CGMP) deviations."
+    },
+    {
+      "id": "care_mgr_01",
+      "category": "care_mgr",
+      "question": "What are the most important drug-related concerns for this patient?",
+      "user_role": "care_manager",
+      "patient": "Evan454",
+      "reference": "The top concern is metformin in the context of her diabetic renal disease: metformin is contraindicated below eGFR 30 with a boxed warning for lactic acidosis, her microalbumin-creatinine ratio of 211 mg/g confirms kidney involvement, and her record lacks an eGFR - obtaining current renal function is the priority action. Her cardiac arrest history adds caution since hypoxic states raise lactic acidosis risk. Secondary items: she is on Augmentin (monitor for allergic reaction and GI effects) and her elevated lipids (LDL 130, TC 225, TG 196) are untreated cardiovascular risk factors worth flagging."
+    },
+    {
+      "id": "care_mgr_02",
+      "category": "care_mgr",
+      "question": "What monitoring should we prioritize for this member's medications?",
+      "user_role": "care_manager",
+      "patient": "Cali421",
+      "reference": "For this 90-year-old with diabetes and coronary disease on six active medications: prioritize renal function monitoring for metformin (age 65+ and declining kidney function are lactic acidosis risk factors; eGFR determines whether metformin remains safe), glycemic monitoring given his HbA1c of 8.8% indicating poor control, bleeding surveillance on clopidogrel, blood pressure monitoring across his three BP-active drugs (amlodipine, captopril, nitroglycerin) with fall risk at his age, and potassium/renal checks for captopril. His severe dyslipidemia (LDL 163, HDL 33, TG 239) is untreated - no statin is on his list."
+    }
+  ]
+}
