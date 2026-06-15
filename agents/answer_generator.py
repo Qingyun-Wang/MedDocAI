@@ -93,6 +93,26 @@ def _build_user_prompt(state: PipelineState, direct_mode: bool = False) -> str:
             "can look it up properly."
         )
     else:
+        # Structured-lookup intents (eligibility / pricing) return exact rows. The
+        # model tends to "help" by adding worked examples (e.g. inventing an income
+        # figure and computing the dollar amount) — none of which is in the evidence,
+        # which tanks faithfulness. Forbid that explicitly for these intents.
+        if state.get("intent") == "policy_eligibility":
+            lines.append(
+                "This is a structured data lookup (Medicaid eligibility / drug pricing). "
+                "The evidence contains EXACT values. State only the figures and facts "
+                "present in the evidence. Do NOT compute, extrapolate, or invent "
+                "illustrative examples, dollar amounts, income scenarios, or any numbers "
+                "not explicitly in the evidence — a worked example the evidence does not "
+                "contain is a hallucination. Answer the specific question directly from "
+                "the evidence, then STOP. Do NOT append generic procedural advice (e.g. "
+                "'contact your local office', 'visit the website', 'compare your income to "
+                "the FPL guidelines', 'your actual copay may vary') or other statements not "
+                "grounded in the evidence — each ungrounded sentence counts against you. "
+                "Required safety disclaimers are added separately by a later step, so you "
+                "do not need to add them. Keep the answer concise and factual."
+            )
+            lines.append("")
         lines.append("Write a clear, well-structured answer grounded in the evidence above. "
                      "Use [n] citation markers. If the evidence does not cover the question, "
                      "say so honestly rather than guessing.")

@@ -49,14 +49,22 @@ _SYSTEM = """You are the Router for a healthcare document intelligence assistant
 Your job is to classify a user's query and prepare it for retrieval.
 
 Intent definitions:
-- medication_info: questions about a drug (what it treats, side effects, warnings,
-  dosing, interactions, safety for a patient)
+- medication_info: questions about a drug OR a patient's medications — what a drug
+  treats, side effects, warnings, dosing, interactions, whether a drug is safe for a
+  patient, what to monitor, or the most important drug-related concerns for a specific
+  patient. A clinical question about a patient's medications/monitoring/safety belongs
+  here (it needs evidence retrieval) EVEN IF no specific drug is named.
 - drug_recall: questions about recalls, shortages, or safety alerts for a drug
 - policy_eligibility: questions about Medicaid eligibility, income limits, drug
   pricing/cost, or coverage policy
-- condition_education: questions asking to explain a health condition or topic in
-  plain language
-- patient_summary: requests to summarise or review a specific patient's situation
+- condition_education: questions asking to explain a health condition, lab value, or
+  topic in plain language
+- patient_summary: ONLY broad requests for an overall overview/summary of the WHOLE
+  patient (e.g., "summarize this patient", "give me an overview of this member", "tell
+  me about this patient", "review this patient's chart"). A question about a SPECIFIC
+  clinical aspect — drug concerns, what to monitor, is a drug safe, what a lab means —
+  is NOT patient_summary; classify those as medication_info (or condition_education)
+  so they retrieve evidence and answer the specific question.
 - direct_answer: conversational or meta questions that need NO database/API retrieval —
   they can be answered entirely from the conversation history and/or the patient context
   already provided. Examples: "what was my last question?", "can you repeat that?",

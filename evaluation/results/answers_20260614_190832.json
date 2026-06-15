@@ -1,0 +1,107 @@
+[
+  {
+    "id": "policy_01",
+    "category": "policy",
+    "question": "What is the Medicaid income limit for pregnant women in Texas?",
+    "reference": "In Texas, pregnant women qualify for Medicaid with household income up to 198% of the Federal Poverty Level. Texas has not adopted the ACA adult Medicaid expansion.",
+    "answer": "Based on the information available, in Texas, pregnant women qualify for Medicaid if their household income is at or below **198% of the Federal Poverty Level** [1].\n\nThis is the income eligibility threshold used to determine whether a pregnant woman qualifies for Medicaid coverage in Texas. To find out if you qualify, you would need to compare your household income to the current Federal Poverty Level guidelines for your household size.\n\nIf you have questions about applying or want to check your specific eligibility, you can contact your local Texas Health and Human Services office or visit the YourTexasBenefits.com website.",
+    "contexts": [
+      "Medicaid income eligibility in Texas (as % of Federal Poverty Level):\n- Children ages 0-1: 198%\n- Children ages 1-5: 144%\n- Children ages 6-18: 133%\n- Pregnant women: 198%\n- Parents/caretakers: 15%\n- Adult expansion: Not adopted\n- Separate CHIP: 201%"
+    ],
+    "intent": "policy_eligibility",
+    "iterations": 1,
+    "review_passed": true,
+    "latency_s": 22.2,
+    "error": null
+  },
+  {
+    "id": "policy_02",
+    "category": "policy",
+    "question": "What is the Medicaid income limit for infants under age 1 in California?",
+    "reference": "In California, infants under age 1 are eligible for Medicaid with household income up to 261% of the Federal Poverty Level. California has also adopted the adult Medicaid expansion at 133% FPL.",
+    "answer": "In California, infants under age 1 are eligible for Medicaid if their family income is at or below 261% of the Federal Poverty Level [1].\n\nThis means that babies in their first year of life qualify for Medicaid coverage at a higher income threshold compared to some other groups. The same 261% income limit also applies to children ages 1-5 and 6-18 in California [1].\n\nTo find out if your family's specific income qualifies and to apply, you would need to contact your local county human services office or visit the Covered California website, as they can help determine eligibility based on your household size and current income.",
+    "contexts": [
+      "Medicaid income eligibility in California (as % of Federal Poverty Level):\n- Children ages 0-1: 261%\n- Children ages 1-5: 261%\n- Children ages 6-18: 261%\n- Pregnant women: 208%\n- Parents/caretakers: 109%\n- Adult expansion: 133%\n- Separate CHIP: 317%"
+    ],
+    "intent": "policy_eligibility",
+    "iterations": 1,
+    "review_passed": true,
+    "latency_s": 9.9,
+    "error": null
+  },
+  {
+    "id": "policy_03",
+    "category": "policy",
+    "question": "Has Virginia adopted Medicaid expansion for adults?",
+    "reference": "According to the CMS eligibility-levels dataset used here, Virginia is listed as not having adopted the ACA adult Medicaid expansion. Its children's Medicaid limits are 143% FPL across age groups and pregnant women qualify at 143% FPL.",
+    "answer": "Based on the evidence provided, **no, Virginia has not adopted Medicaid expansion for adults** [1].\n\nThe eligibility information shows that \"Adult expansion: Not adopted\" [1]. This means that low-income adults without children who would qualify under Medicaid expansion are not currently eligible for coverage in Virginia under this data.\n\nThe evidence shows that parents and caretakers in Virginia can qualify at 49% of the Federal Poverty Level [1], but the broader adult expansion category that would cover childless adults has not been implemented [1].",
+    "contexts": [
+      "Medicaid income eligibility in Virginia (as % of Federal Poverty Level):\n- Children ages 0-1: 143%\n- Children ages 1-5: 143%\n- Children ages 6-18: 143%\n- Pregnant women: 143%\n- Parents/caretakers: 49%\n- Adult expansion: Not adopted\n- Separate CHIP: 200%"
+    ],
+    "intent": "policy_eligibility",
+    "iterations": 2,
+    "review_passed": true,
+    "latency_s": 28.0,
+    "error": null
+  },
+  {
+    "id": "policy_04",
+    "category": "policy",
+    "question": "What income level qualifies adults for expanded Medicaid in New York?",
+    "reference": "New York has adopted adult Medicaid expansion with eligibility up to 200% of the Federal Poverty Level - higher than the standard 133% expansion level used in most expansion states. New York's limits for children ages 0-1 and pregnant women are 218% FPL.",
+    "answer": "In New York, adults qualify for expanded Medicaid if their income is at or below **200% of the Federal Poverty Level** [1].\n\nThis income limit applies specifically to the adult expansion category of Medicaid eligibility [1].\n\n---\n\n**Note:** To find out the actual dollar amount this percentage represents for your household size, you would need to check the current Federal Poverty Level guidelines, as these dollar amounts are updated annually by the federal government. I recommend contacting New York's Medicaid program or visiting their official website for the specific income limits in dollars that apply to your situation.",
+    "contexts": [
+      "Medicaid income eligibility in New York (as % of Federal Poverty Level):\n- Children ages 0-1: 218%\n- Children ages 1-5: 149%\n- Children ages 6-18: 149%\n- Pregnant women: 218%\n- Parents/caretakers: 133%\n- Adult expansion: 200%\n- Separate CHIP: 400%"
+    ],
+    "intent": "policy_eligibility",
+    "iterations": 1,
+    "review_passed": true,
+    "latency_s": 13.8,
+    "error": null
+  },
+  {
+    "id": "policy_05",
+    "category": "policy",
+    "question": "How much does generic lisinopril cost per tablet under Medicaid?",
+    "reference": "Per the NADAC (National Average Drug Acquisition Cost) 2026 data, generic lisinopril 10 mg tablets cost approximately $0.019 per tablet - about two cents per tablet.",
+    "answer": "Based on the Medicaid pricing information available, generic lisinopril 10 mg tablets cost **$0.0190 per tablet** under the Medicaid NADAC (National Average Drug Acquisition Cost) price [1].\n\nThis price is effective as of May 20, 2026 [1]. Please note that this is the acquisition cost used by Medicaid - your actual out-of-pocket cost may be different depending on your specific Medicaid coverage and any applicable copayments in your state.\n\nIf you need information about other strengths of lisinopril or want to know your personal copayment amount, I'd recommend contacting your Medicaid plan or pharmacy directly.",
+    "contexts": [
+      "LISINOPRIL 10 MG TABLET (NDC 00591040701, Prescription) has a Medicaid NADAC price of $0.0190 per EA, effective 2026-05-20."
+    ],
+    "intent": "policy_eligibility",
+    "iterations": 1,
+    "review_passed": true,
+    "latency_s": 9.9,
+    "error": null
+  },
+  {
+    "id": "care_mgr_01",
+    "category": "care_mgr",
+    "question": "What are the most important drug-related concerns for this patient?",
+    "reference": "The top concern is metformin in the context of her diabetic renal disease: metformin is contraindicated below eGFR 30 with a boxed warning for lactic acidosis, her microalbumin-creatinine ratio of 211 mg/g confirms kidney involvement, and her record lacks an eGFR - obtaining current renal function is the priority action. Her cardiac arrest history adds caution since hypoxic states raise lactic acidosis risk. Secondary items: she is on Augmentin (monitor for allergic reaction and GI effects) and her elevated lipids (LDL 130, TC 225, TG 196) are untreated cardiovascular risk factors worth flagging.",
+    "answer": "Based on this patient's record, there are several critical drug-related concerns requiring care coordination attention:\n\n## Major Medication Gaps\n\n**Missing cardiovascular and diabetes medications**: Despite a history of cardiac arrest, current hypertension, and multiple diabetes-related complications, this patient is only on metformin [1]. This represents a significant treatment gap. The patient's elevated LDL (130 mg/dL) and total cholesterol (225 mg/dL) [1], combined with cardiac arrest history [1], typically warrant statin therapy. Additionally, the hypertension diagnosis [1] appears untreated, which is particularly concerning given the cardiac history.\n\n## Renal Function Monitoring\n\n**Metformin and diabetic kidney disease**: The patient has diabetic renal disease with microalbuminuria (urine microalbumin-creatinine ratio 211 mg/g, which is elevated) [1]. While metformin 500mg is prescribed [1], ongoing renal function monitoring is essential, as declining kidney function may eventually require metformin dose adjustment or discontinuation. The care manager should ensure regular serum creatinine and eGFR monitoring is scheduled.\n\n## Suboptimal Diabetes Control\n\n**Inadequate glycemic management**: The fasting glucose of 107 mg/dL [1] suggests the current metformin monotherapy may be insufficient, especially given the progression to diabetic retinopathy (including macular edema), nephropathy, and microalbuminuria [1]. These microvascular complications indicate need for intensified diabetes management and potentially additional antihyperglycemic agents.\n\n## Current Antibiotic Course\n\n**Augmentin for acute pharyngitis**: The patient is on amoxicillin-clavulanate [1] for acute viral pharyngitis [1]. This represents a potential antimicrobial stewardship concern, as viral pharyngitis typically doesn't require antibiotics. The prescriber's rationale should be clarified during care coordination.\n\n**Coordination recommendation**: Priority outreach to the prescribing clinician regarding cardiovascular risk management, antihypertensive therapy, and diabetes treatment intensification is warranted.",
+    "contexts": [
+      "Patient: Evan454 Abbott509, 58yo female\nActive conditions: Cardiac Arrest; History of cardiac arrest (situation); Hypertension; Diabetes; Diabetic retinopathy associated with type II diabetes mellitus (disorder); Nonproliferative diabetic retinopathy due to type 2 diabetes mellitus (disorder); Macular edema and retinopathy due to type 2 diabetes mellitus (disorder); Diabetic renal disease (disorder); Microalbuminuria due to type 2 diabetes mellitus (disorder); Acute viral pharyngitis (disorder)\nActive medications: 24 HR Metformin hydrochloride 500 MG Extended Release Oral Tablet;  Amoxicillin 250 MG / Clavulanate 125 MG [Augmentin]\nAbnormal lab results: Microalbumin Creatine Ratio: 211.0 mg/g; Low Density Lipoprotein Cholesterol: 130.0 mg/dL; Chloride: 108.0 mmol/L; Total Cholesterol: 225.0 mg/dL; Glucose: 107.0 mg/dL; Triglycerides: 196.0 mg/dL"
+    ],
+    "intent": "medication_info",
+    "iterations": 1,
+    "review_passed": true,
+    "latency_s": 20.1,
+    "error": null
+  },
+  {
+    "id": "care_mgr_02",
+    "category": "care_mgr",
+    "question": "What monitoring should we prioritize for this member's medications?",
+    "reference": "For this 90-year-old with diabetes and coronary disease on six active medications: prioritize renal function monitoring for metformin (age 65+ and declining kidney function are lactic acidosis risk factors; eGFR determines whether metformin remains safe), glycemic monitoring given his HbA1c of 8.8% indicating poor control, bleeding surveillance on clopidogrel, blood pressure monitoring across his three BP-active drugs (amlodipine, captopril, nitroglycerin) with fall risk at his age, and potassium/renal checks for captopril. His severe dyslipidemia (LDL 163, HDL 33, TG 239) is untreated - no statin is on his list.",
+    "answer": "# Priority Monitoring for This Member's Medications\n\nBased on this 90-year-old male patient's medication regimen and clinical profile [1], the following monitoring parameters should be prioritized:\n\n## Renal Function and Electrolyte Monitoring\n\n**Captopril (ACE inhibitor)** requires monitoring of kidney function and potassium levels, as this medication class can affect both [1]. This is particularly important given the patient's age and cardiovascular disease burden.\n\n**Metformin** also requires renal function monitoring, as kidney impairment can lead to drug accumulation and increased risk of lactic acidosis [1]. The patient's current glucose of 169.0 mg/dL and HbA1c of 8.8% indicate suboptimal diabetes control [1].\n\n## Glycemic Control\n\nWith diabetes and prediabetes diagnoses [1], ongoing monitoring of:\n- Blood glucose levels (currently 169.0 mg/dL) [1]\n- Hemoglobin A1c (currently 8.8%) [1]\n\nThese values are both above target ranges and suggest the need for closer monitoring to assess treatment effectiveness [1].\n\n## Cardiovascular Parameters\n\n**Blood pressure monitoring** is essential given:\n- Active hypertension diagnosis [1]\n- Use of both Amlodipine and Captopril for blood pressure management [1]\n- History of myocardial infarction [1]\n\n## Lipid Profile\n\nCurrent abnormal lipid values require monitoring [1]:\n- LDL cholesterol: 163.0 mg/dL\n- HDL cholesterol: 33.0 mg/dL (low)\n- Total cholesterol: 244.0 mg/dL\n- Triglycerides: 239.0 mg/dL\n\nThese significantly elevated values, combined with coronary heart disease and post-MI status, warrant attention [1].\n\n## Antiplatelet Therapy Monitoring\n\n**Clopidogrel** requires monitoring for signs of bleeding or bruising, given its antiplatelet effects in a patient with cardiovascular disease [1].\n\nThe evidence provided does not specify monitoring frequencies or detailed protocols for these parameters.",
+    "contexts": [
+      "Patient: Cali421 Abernathy746, 90yo male\nActive conditions: Hypertension; Prediabetes; Diabetes; Coronary Heart Disease; Acute bronchitis (disorder); Sprain of wrist; Myocardial Infarction; History of myocardial infarction (situation)\nActive medications: Penicillin V Potassium 250 MG; 24 HR Metformin hydrochloride 500 MG Extended Release Oral Tablet; Clopidogrel 75 MG Oral Tablet; Amlodipine 5 MG Oral Tablet; Nitroglycerin 0.4 MG/ACTUAT [Nitrolingual]; Captopril 25 MG Oral Tablet\nAbnormal lab results: Low Density Lipoprotein Cholesterol: 163.0 mg/dL; High Density Lipoprotein Cholesterol: 33.0 mg/dL; Total Cholesterol: 244.0 mg/dL; Glucose: 169.0 mg/dL; Triglycerides: 239.0 mg/dL; Hemoglobin A1c/Hemoglobin.total in Blood: 8.8 %"
+    ],
+    "intent": "medication_info",
+    "iterations": 2,
+    "review_passed": false,
+    "latency_s": 45.6,
+    "error": null
+  }
+]

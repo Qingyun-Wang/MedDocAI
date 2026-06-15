@@ -155,18 +155,26 @@ Quality is measured before features are added. A 30-question curated set with ha
 source-grounded reference answers is scored by an **independent judge** (`gpt-4o-mini` — a
 different model family from the pipeline's Claude, to avoid self-grading bias).
 
-| Metric | Baseline | Reads |
-|---|---|---|
-| Faithfulness | **0.79** | Are claims grounded in retrieved evidence? |
-| Answer relevancy | **0.86** | Does the answer address the question? |
-| Context precision | **0.94** | Are the retrieved chunks relevant? |
-| Context recall | **0.83** | Did retrieval capture what the reference needs? |
+| Metric | Baseline | After iteration | Reads |
+|---|---|---|---|
+| Faithfulness | 0.79 | **0.89** | Are claims grounded in retrieved evidence? |
+| Answer relevancy | 0.86 | **0.86** | Does the answer address the question? |
+| Context precision | 0.94 | **0.94** | Are the retrieved chunks relevant? |
+| Context recall | 0.83 | **0.83** | Did retrieval capture what the reference needs? |
 
-The high **context precision (0.94)** validates the cross-encoder reranker. Two honest,
-documented improvement targets surfaced: policy answers over-elaborate on one-row structured
-lookups (low faithfulness on that slice), and some specific clinical questions misroute to
-the broad patient summary. Both are diagnosed and queued — the point of the harness is to
-*find* these, not hide them.
+The high **context precision (0.94)** validates the cross-encoder reranker. More importantly,
+the harness was used to **close the loop**, not just report a number — the baseline surfaced
+two weaknesses, each was root-caused and fixed, then re-measured:
+
+| Issue found | Root cause | Fix | Result |
+|---|---|---|---|
+| Policy faithfulness **0.29** | Answer Generator embellished one-row lookups with invented figures + ungrounded "contact your office" boilerplate | Constrain structured-lookup answers to evidence-only facts | **0.90** |
+| care_mgr relevancy **0.56** | Specific clinical questions misrouted to the broad patient summary | Tighten routing: clinical questions retrieve + answer the precise ask | **0.73–0.80** |
+
+The point of the harness is to *find* and *fix* these — diagnosis (e.g. "the answer is correct
+but adds ungrounded elaboration") points to a different fix than "the answer is wrong," and the
+metric guided each step. Remaining honest gaps: `care_mgr` is a small 2-question slice (noisy),
+and `med_patient` context recall (~0.66) is a retrieval-coverage target for a future round.
 
 ---
 

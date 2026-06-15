@@ -1,0 +1,77 @@
+[
+  {
+    "id": "policy_01",
+    "category": "policy",
+    "question": "What is the Medicaid income limit for pregnant women in Texas?",
+    "reference": "In Texas, pregnant women qualify for Medicaid with household income up to 198% of the Federal Poverty Level. Texas has not adopted the ACA adult Medicaid expansion.",
+    "answer": "In Texas, pregnant women are eligible for Medicaid if their income is at or below 198% of the Federal Poverty Level [1].",
+    "contexts": [
+      "Medicaid income eligibility in Texas (as % of Federal Poverty Level):\n- Children ages 0-1: 198%\n- Children ages 1-5: 144%\n- Children ages 6-18: 133%\n- Pregnant women: 198%\n- Parents/caretakers: 15%\n- Adult expansion: Not adopted\n- Separate CHIP: 201%"
+    ],
+    "intent": "policy_eligibility",
+    "iterations": 1,
+    "review_passed": true,
+    "latency_s": 13.9,
+    "error": null
+  },
+  {
+    "id": "policy_02",
+    "category": "policy",
+    "question": "What is the Medicaid income limit for infants under age 1 in California?",
+    "reference": "In California, infants under age 1 are eligible for Medicaid with household income up to 261% of the Federal Poverty Level. California has also adopted the adult Medicaid expansion at 133% FPL.",
+    "answer": "In California, Medicaid income eligibility for infants under age 1 is 261% of the Federal Poverty Level [1].",
+    "contexts": [
+      "Medicaid income eligibility in California (as % of Federal Poverty Level):\n- Children ages 0-1: 261%\n- Children ages 1-5: 261%\n- Children ages 6-18: 261%\n- Pregnant women: 208%\n- Parents/caretakers: 109%\n- Adult expansion: 133%\n- Separate CHIP: 317%"
+    ],
+    "intent": "policy_eligibility",
+    "iterations": 1,
+    "review_passed": true,
+    "latency_s": 6.7,
+    "error": null
+  },
+  {
+    "id": "policy_03",
+    "category": "policy",
+    "question": "Has Virginia adopted Medicaid expansion for adults?",
+    "reference": "According to the CMS eligibility-levels dataset used here, Virginia is listed as not having adopted the ACA adult Medicaid expansion. Its children's Medicaid limits are 143% FPL across age groups and pregnant women qualify at 143% FPL.",
+    "answer": "Based on the evidence provided, **No, Virginia has not adopted Medicaid expansion for adults** [1].\n\nThe data shows that adult expansion is listed as \"Not adopted\" in Virginia's Medicaid eligibility information [1].",
+    "contexts": [
+      "Medicaid income eligibility in Virginia (as % of Federal Poverty Level):\n- Children ages 0-1: 143%\n- Children ages 1-5: 143%\n- Children ages 6-18: 143%\n- Pregnant women: 143%\n- Parents/caretakers: 49%\n- Adult expansion: Not adopted\n- Separate CHIP: 200%"
+    ],
+    "intent": "policy_eligibility",
+    "iterations": 1,
+    "review_passed": true,
+    "latency_s": 8.9,
+    "error": null
+  },
+  {
+    "id": "policy_04",
+    "category": "policy",
+    "question": "What income level qualifies adults for expanded Medicaid in New York?",
+    "reference": "New York has adopted adult Medicaid expansion with eligibility up to 200% of the Federal Poverty Level - higher than the standard 133% expansion level used in most expansion states. New York's limits for children ages 0-1 and pregnant women are 218% FPL.",
+    "answer": "In New York, adults qualify for expanded Medicaid if their income is at or below 200% of the Federal Poverty Level [1].",
+    "contexts": [
+      "Medicaid income eligibility in New York (as % of Federal Poverty Level):\n- Children ages 0-1: 218%\n- Children ages 1-5: 149%\n- Children ages 6-18: 149%\n- Pregnant women: 218%\n- Parents/caretakers: 133%\n- Adult expansion: 200%\n- Separate CHIP: 400%"
+    ],
+    "intent": "policy_eligibility",
+    "iterations": 1,
+    "review_passed": true,
+    "latency_s": 6.2,
+    "error": null
+  },
+  {
+    "id": "policy_05",
+    "category": "policy",
+    "question": "How much does generic lisinopril cost per tablet under Medicaid?",
+    "reference": "Per the NADAC (National Average Drug Acquisition Cost) 2026 data, generic lisinopril 10 mg tablets cost approximately $0.019 per tablet - about two cents per tablet.",
+    "answer": "Based on the evidence provided, generic lisinopril 10 mg tablets have a Medicaid NADAC (National Average Drug Acquisition Cost) price of $0.0190 per tablet [1]. This price was effective as of May 20, 2026 [1].",
+    "contexts": [
+      "LISINOPRIL 10 MG TABLET (NDC 00591040701, Prescription) has a Medicaid NADAC price of $0.0190 per EA, effective 2026-05-20."
+    ],
+    "intent": "policy_eligibility",
+    "iterations": 1,
+    "review_passed": true,
+    "latency_s": 7.1,
+    "error": null
+  }
+]
