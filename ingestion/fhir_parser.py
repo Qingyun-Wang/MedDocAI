@@ -26,7 +26,9 @@ import os
 from datetime import date, datetime
 from typing import Optional
 
-from models.schemas import Condition, Encounter, LabResult, Medication, ParsedPatient
+from models.schemas import (
+    Condition, Encounter, LabResult, Medication, ParsedPatient, Procedure,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +66,17 @@ _EXCLUDE_SNOMED_DISPLAYS = {
     "not in labor force",
     "stress (finding)",
     "social isolation (finding)",
+}
+
+# Administrative / documentation "procedures" that are noise in a care summary
+# (Synthea emits these as Procedure resources — they carry no clinical meaning).
+_EXCLUDE_PROCEDURE_DISPLAYS = {
+    "documentation of current medications",
+    "information gathering (procedure)",
+    "medication reconciliation (procedure)",
+    "assessment of health and social care needs (procedure)",
+    "notification of treatment (procedure)",
+    "referral to specialist (procedure)",
 }
 
 
@@ -113,6 +126,7 @@ def parse_patient_file(fhir_path: str) -> Optional[ParsedPatient]:
     )
     labs = _extract_labs(grouped.get("Observation", []))
     encounters = _extract_encounters(grouped.get("Encounter", []))
+    procedures = _extract_procedures(grouped.get("Procedure", []))
 
     return ParsedPatient(
         patient_id=patient_id,
@@ -124,6 +138,7 @@ def parse_patient_file(fhir_path: str) -> Optional[ParsedPatient]:
         medications=medications,
         labs=labs,
         encounters=encounters,
+        procedures=procedures,
         fhir_path=os.path.abspath(fhir_path),
     )
 
@@ -423,6 +438,51 @@ def _extract_encounters(
     # Sort descending by date, keep most recent 5
     encounters.sort(key=lambda x: x.date, reverse=True)
     return encounters[:5]
+
+
+def _extract_procedures(
+    procedure_tuples: list[tuple[dict, int]],
+) -> list[Procedure]:
+    """Extract the most recent procedures from Procedure resources.
+
+    Synthea STU3 codes procedures with SNOMED CT (code.coding[].system = snomed),
+    with a date in performedDateTime or performedPeriod.start. Keeps the 8 most
+    recent, skipping entries with no code/display.
+    """
+    procedures = []
+
+    for resource, _ in procedure_tuples:
+        coding = _find_coding(resource.get("code", {}), "snomed")
+        if not coding:
+            codings = resource.get("code", {}).get("coding", [])
+            coding = codings[0] if codings else {}
+
+        code = coding.get("code", "")
+        display = coding.get("display") or resource.get("code", {}).get("text", "")
+        if not code or not display:
+            continue
+
+        # Skip administrative/documentation noise
+        if display.lower().strip() in _EXCLUDE_PROCEDURE_DISPLAYS:
+            continue
+
+        performed = (
+            resource.get("performedDateTime", "")
+            or resource.get("performedPeriod", {}).get("start", "")
+        )
+        proc_date = performed[:10] if performed else None
+
+        procedures.append(Procedure(
+            code=code,
+            code_system="snomed",
+            display=display,
+            date=proc_date,
+            status=resource.get("status", "completed"),
+        ))
+
+    # Sort descending by date, keep most recent 8
+    procedures.sort(key=lambda p: p.date or "", reverse=True)
+    return procedures[:8]
 
 
 # ---------------------------------------------------------------------------

@@ -6,12 +6,22 @@ Run with:  python -m pytest tests/test_fhir_parser.py -v
 
 import os
 import pytest
-from ingestion.fhir_parser import parse_patient_file, parse_patient_directory, LOINC_REFERENCE_RANGES
+from ingestion.fhir_parser import (
+    parse_patient_file, parse_patient_directory,
+    LOINC_REFERENCE_RANGES, _EXCLUDE_PROCEDURE_DISPLAYS,
+)
 from models.schemas import ParsedPatient
 
 FHIR_DIR = "data/synthea/output_1/fhir"
 SAMPLE_FILE = os.path.join(FHIR_DIR, "Abbott509_Aaron203_44.json")
 RICH_FILE   = os.path.join(FHIR_DIR, "Abbott509_Evan454_49.json")   # F,58yo,13 conditions,6 abnormal labs
+
+# These tests parse real Synthea FHIR files under data/ (gitignored). Skip the whole
+# module when that data is absent (e.g. in CI) so the suite stays green without it.
+pytestmark = pytest.mark.skipif(
+    not os.path.isdir(FHIR_DIR),
+    reason="requires local data/ (gitignored); skipped in CI",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -161,6 +171,44 @@ def test_encounter_type_is_string():
     for e in p.encounters:
         assert isinstance(e.encounter_type, str)
         assert e.encounter_type != ""
+
+
+# ---------------------------------------------------------------------------
+# Procedures
+# ---------------------------------------------------------------------------
+
+def test_procedures_have_codes_and_system():
+    patients = parse_patient_directory(FHIR_DIR, limit=10)
+    for p in patients:
+        for pr in p.procedures:
+            assert pr.code != "", f"Empty code for procedure: {pr.display}"
+            assert pr.display != ""
+            assert pr.code_system == "snomed"
+
+def test_procedures_capped_at_eight():
+    patients = parse_patient_directory(FHIR_DIR, limit=10)
+    for p in patients:
+        assert len(p.procedures) <= 8
+
+def test_procedure_admin_noise_filtered():
+    """Administrative 'procedures' (e.g. 'Documentation of current medications')
+    must be excluded from every patient's parsed procedures."""
+    patients = parse_patient_directory(FHIR_DIR, limit=10)
+    for p in patients:
+        for pr in p.procedures:
+            assert pr.display.lower().strip() not in _EXCLUDE_PROCEDURE_DISPLAYS
+
+def test_some_patient_has_a_real_procedure():
+    """At least one demo patient has a genuine clinical procedure (e.g. Colonoscopy)."""
+    patients = parse_patient_directory(FHIR_DIR, limit=10)
+    total = sum(len(p.procedures) for p in patients)
+    assert total > 0, "Expected at least one real procedure across the 10 demo patients"
+
+def test_procedures_sorted_most_recent_first():
+    patients = parse_patient_directory(FHIR_DIR, limit=10)
+    for p in patients:
+        dated = [pr.date for pr in p.procedures if pr.date]
+        assert dated == sorted(dated, reverse=True)
 
 
 # ---------------------------------------------------------------------------

@@ -35,6 +35,15 @@ def _call_tool(name: str, state: PipelineState) -> list[Evidence]:
         if name == "search_medlineplus":
             return qdrant_tool.search_medlineplus(query, limit=10)
 
+        if name == "search_medlineplus_live":
+            # Live health-topics keyword search — corrective-RAG fallback used only
+            # on a reviewer-triggered retry (see INTENT_RETRY_EXTRA_TOOLS). This is a
+            # LEXICAL search, so feed it the ORIGINAL user question, not the keyword-
+            # enriched shaped_query (which is tuned for vector retrieval and matches
+            # the lexical index poorly).
+            return medlineplus_tool.search_health_topics_live(
+                state.get("query") or query, limit=5)
+
         if name == "fetch_drug_label":
             if drug:
                 return openfda_tool.fetch_drug_label(drug)
@@ -60,33 +69,60 @@ def _call_tool(name: str, state: PipelineState) -> list[Evidence]:
                 return sqlite_tool.lookup_state_eligibility(state_nm)
             return []
 
+        if name == "explain_drug_by_name":
+            # Name-based MedlinePlus drug monograph (Connect .v.dn fallback). Works
+            # with OR without a selected patient — uses the Router's extracted drug name.
+            return medlineplus_tool.explain_drug_by_name(drug) if drug else []
+
         if name == "explain_condition_snomed":
-            # Use patient's conditions if available; else skip (needs a code)
-            results: list[Evidence] = []
-            if ctx:
-                conditions = ctx.get("conditions_json") or ctx.get("conditions") or []
-                for c in conditions[:3]:
-                    code = c.get("snomed_code", "")
-                    if code:
-                        results.extend(
-                            medlineplus_tool.explain_condition_snomed(
-                                code, c.get("display", ""), limit=1
-                            )
-                        )
-            return results
+            # Explain the patient's conditions (needs SNOMED codes from their record).
+            # Connect lookups run concurrently — N round-trips collapse to ~one.
+            if not ctx:
+                return []
+            conditions = ctx.get("conditions_json") or ctx.get("conditions") or []
+            jobs = [
+                (lambda c=c: medlineplus_tool.explain_condition_snomed(
+                    c["snomed_code"], c.get("display", ""), limit=1))
+                for c in conditions[:3] if c.get("snomed_code")
+            ]
+            return medlineplus_tool.explain_batch(jobs)
 
         if name == "explain_drug_rxnorm":
-            results = []
-            if ctx:
-                meds = ctx.get("medications_json") or ctx.get("medications") or []
-                for m in meds[:3]:
-                    if m.get("status") == "active" and m.get("rxnorm_code"):
-                        results.extend(
-                            medlineplus_tool.explain_drug_rxnorm(
-                                m["rxnorm_code"], m.get("display", ""), limit=1
-                            )
-                        )
-            return results
+            # Explain the patient's active meds by RxNorm code (code + name = most robust).
+            if not ctx:
+                return []
+            meds = ctx.get("medications_json") or ctx.get("medications") or []
+            jobs = [
+                (lambda m=m: medlineplus_tool.explain_drug_rxnorm(
+                    m["rxnorm_code"], m.get("display", ""), limit=1))
+                for m in meds[:3]
+                if m.get("status") == "active" and m.get("rxnorm_code")
+            ]
+            return medlineplus_tool.explain_batch(jobs)
+
+        if name == "explain_lab_loinc":
+            # Explain the patient's ABNORMAL labs by LOINC code (concurrently).
+            if not ctx:
+                return []
+            labs = ctx.get("labs_json") or ctx.get("labs") or []
+            jobs = [
+                (lambda l=l: medlineplus_tool.explain_lab_loinc(
+                    l["loinc_code"], l.get("display", ""), limit=1))
+                for l in labs if l.get("is_abnormal") and l.get("loinc_code")
+            ][:3]
+            return medlineplus_tool.explain_batch(jobs)
+
+        if name == "explain_procedure_snomed":
+            # Explain the patient's recent procedures by SNOMED code (concurrently).
+            if not ctx:
+                return []
+            procedures = ctx.get("procedures_json") or ctx.get("procedures") or []
+            jobs = [
+                (lambda p=p: medlineplus_tool.explain_procedure_snomed(
+                    p["code"], p.get("display", ""), limit=1))
+                for p in procedures[:3] if p.get("code")
+            ]
+            return medlineplus_tool.explain_batch(jobs)
 
     except Exception as e:
         logger.warning("Tool %s failed: %s", name, e)

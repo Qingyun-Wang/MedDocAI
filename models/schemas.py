@@ -66,6 +66,19 @@ class Encounter(BaseModel):
     date: str = Field(description="ISO date string of encounter start")
 
 
+class Procedure(BaseModel):
+    """A clinical procedure extracted from a FHIR Procedure resource.
+
+    Synthea STU3 codes procedures with SNOMED CT; some real EHRs use CPT.
+    Only the most recent few procedures are kept per patient.
+    """
+    code: str = Field(description="Procedure code (SNOMED CT in Synthea; CPT in some EHRs)")
+    code_system: str = Field(description="'snomed' | 'cpt'")
+    display: str = Field(description="Human-readable procedure name")
+    date: Optional[str] = Field(None, description="ISO date string of the procedure")
+    status: str = Field(default="completed", description="'completed' | 'in-progress' | etc.")
+
+
 class ParsedPatient(BaseModel):
     """Complete structured patient record produced by the FHIR parser.
 
@@ -81,6 +94,7 @@ class ParsedPatient(BaseModel):
     medications: list[Medication] = Field(default_factory=list)
     labs: list[LabResult] = Field(default_factory=list)
     encounters: list[Encounter] = Field(default_factory=list)
+    procedures: list[Procedure] = Field(default_factory=list)
     fhir_path: str = Field(description="Absolute path to the source FHIR JSON file")
 
 

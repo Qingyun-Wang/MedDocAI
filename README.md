@@ -14,7 +14,7 @@
   <img alt="Qdrant" src="https://img.shields.io/badge/Qdrant-vector%20DB-DC244B">
   <img alt="RAGAS" src="https://img.shields.io/badge/RAGAS-evaluation-4B8BBE">
   <img alt="Docker" src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white">
-  <img alt="Tests" src="https://img.shields.io/badge/tests-238%20passing-2EA043">
+  <a href="https://github.com/Qingyun-Wang/MedDocAI/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Qingyun-Wang/MedDocAI/actions/workflows/ci.yml/badge.svg"></a>
 </p>
 
 **▶️ Try it live: [huggingface.co/spaces/QingyunWang/MedDocAI](https://huggingface.co/spaces/QingyunWang/MedDocAI)** — ask a real medication, condition, or Medicaid-policy question and watch the cited, source-grounded answer build. *(Free Space; the first request may take ~30s while it wakes.)*

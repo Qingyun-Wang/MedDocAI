@@ -14,6 +14,13 @@ NADAC_CSV = "data/cms_medicaid/nadac_2026.csv"
 ELIGIBILITY_CSV = "data/cms_medicaid/eligibility_levels.csv"
 SAMPLE_FHIR = os.path.join(FHIR_DIR, "Abbott509_Aaron203_44.json")
 
+# These tests load real CSVs / FHIR files under data/ (gitignored). Skip the whole
+# module when that data is absent (e.g. in CI) so the suite stays green without it.
+pytestmark = pytest.mark.skipif(
+    not os.path.isdir(FHIR_DIR),
+    reason="requires local data/ (gitignored); skipped in CI",
+)
+
 
 @pytest.fixture
 def db(tmp_path):
@@ -187,6 +194,7 @@ def test_patient_json_fields_deserialized(db):
     assert isinstance(result["medications_json"], list)
     assert isinstance(result["labs_json"], list)
     assert isinstance(result["encounters_json"], list)
+    assert isinstance(result["procedures_json"], list)
 
 def test_get_patient_unknown_id(db):
     result = db.get_patient("nonexistent-uuid")
@@ -302,3 +310,32 @@ def test_persona_column_exists_after_migration(db):
     with db._conn() as conn:
         cols = {r["name"] for r in conn.execute("PRAGMA table_info(chat_history)").fetchall()}
     assert "persona" in cols
+
+
+def test_procedures_column_exists(db):
+    with db._conn() as conn:
+        cols = {r["name"] for r in
+                conn.execute("PRAGMA table_info(patient_summaries)").fetchall()}
+    assert "procedures_json" in cols
+
+
+def test_migration_adds_procedures_to_legacy_db(tmp_path):
+    """A pre-Fix-3 DB (no procedures_json) must be migrated by create_tables —
+    so someone who downloads the repo and re-runs against an old DB still works."""
+    import sqlite3
+    db_path = str(tmp_path / "legacy.db")
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """CREATE TABLE patient_summaries (
+            patient_id TEXT PRIMARY KEY, name TEXT, age INTEGER, gender TEXT,
+            conditions_json TEXT, medications_json TEXT, labs_json TEXT,
+            encounters_json TEXT, summary_md TEXT, generated_at TEXT, fhir_path TEXT)"""
+    )
+    conn.commit()
+    conn.close()
+    # Migration runs inside create_tables
+    MedDocDB(db_path).create_tables()
+    with MedDocDB(db_path)._conn() as c:
+        cols = {r["name"] for r in
+                c.execute("PRAGMA table_info(patient_summaries)").fetchall()}
+    assert "procedures_json" in cols

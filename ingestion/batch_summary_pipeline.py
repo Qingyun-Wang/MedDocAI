@@ -107,6 +107,15 @@ class EnrichedLab:
 
 
 @dataclass
+class EnrichedProcedure:
+    code: str
+    display: str
+    date: str = ""
+    medlineplus_title: str = ""
+    medlineplus_summary: str = ""
+
+
+@dataclass
 class EnrichedPatient:
     patient_id: str
     name: str
@@ -115,6 +124,7 @@ class EnrichedPatient:
     conditions: list[EnrichedCondition] = field(default_factory=list)
     medications: list[EnrichedMedication] = field(default_factory=list)
     labs: list[EnrichedLab] = field(default_factory=list)
+    procedures: list[EnrichedProcedure] = field(default_factory=list)
     fhir_path: str = ""
 
 
@@ -338,6 +348,26 @@ async def enrich_patient(
             medlineplus_summary=summary,
         ))
 
+    # ── Procedures: MedlinePlus SNOMED lookup ─────────────────────────────
+    procedure_tasks = [
+        _medlineplus_connect(session, p.code, _SNOMED_SYSTEM, p.display)
+        for p in patient.procedures
+    ]
+    procedure_results = await asyncio.gather(*procedure_tasks, return_exceptions=True)
+
+    for procedure, result in zip(patient.procedures, procedure_results):
+        if isinstance(result, Exception):
+            title, summary = "", ""
+        else:
+            title, summary = result
+        enriched.procedures.append(EnrichedProcedure(
+            code=procedure.code,
+            display=procedure.display,
+            date=procedure.date or "",
+            medlineplus_title=title,
+            medlineplus_summary=summary,
+        ))
+
     return enriched
 
 
@@ -399,6 +429,16 @@ def _build_user_prompt(ep: EnrichedPatient) -> str:
                 lines.append(f"    MedlinePlus: {l.medlineplus_summary}")
         lines.append("")
 
+    # Recent procedures
+    if ep.procedures:
+        lines.append("RECENT PROCEDURES:")
+        for p in ep.procedures:
+            datestr = f" ({p.date})" if p.date else ""
+            lines.append(f"  - {p.display}{datestr}")
+            if p.medlineplus_summary:
+                lines.append(f"    MedlinePlus: {p.medlineplus_summary}")
+        lines.append("")
+
     lines.append("""Generate a structured markdown care summary with these sections:
 
 ## Patient Overview
@@ -414,6 +454,12 @@ def _build_user_prompt(ep: EnrichedPatient) -> str:
 ## Lab Flags
 (only include abnormal labs — value, what it means, why it matters for this patient)
 (omit this section entirely if no abnormal labs)
+
+## Recent Procedures
+(ONLY if a "RECENT PROCEDURES" list appears in the patient data above — list each with a
+brief plain-English note on what it was and why it may matter for their care. If NO such
+list was provided, OMIT this entire section and its heading. Do NOT invent or infer
+procedures from conditions, medications, or encounters — that would be unfaithful.)
 
 ## Care Considerations
 (2-3 suggested follow-up items based on the above data — NOT medical advice)
@@ -436,7 +482,9 @@ async def generate_summary(
         try:
             response = await claude_client.messages.create(
                 model=CLAUDE_MODEL,
-                max_tokens=1500,
+                # 1500 truncated multi-condition patients mid-sentence (cutting off the
+                # later Procedures / Care Considerations sections); 2500 gives headroom.
+                max_tokens=2500,
                 system=_SYSTEM_PROMPT,
                 messages=[
                     {"role": "user", "content": _build_user_prompt(ep)}
@@ -515,8 +563,8 @@ async def run_batch(
         return {"processed": 0, "skipped": skipped_count, "failed": 0, "duration_s": 0}
 
     # ── Cost estimate ────────────────────────────────────────────────────
-    # ~800 input tokens + ~600 output tokens per patient at current Claude pricing
-    est_cost = len(to_process) * (800 * 3 + 600 * 15) / 1_000_000
+    # ~800 input tokens + ~1000 output tokens per patient at current Claude pricing
+    est_cost = len(to_process) * (800 * 3 + 1000 * 15) / 1_000_000
     print(f"\nBatch plan: {len(to_process)} patients | est. cost ≈ ${est_cost:.2f}")
     print("Starting in 3 seconds... (Ctrl-C to cancel)\n")
     await asyncio.sleep(3)

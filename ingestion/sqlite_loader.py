@@ -61,6 +61,7 @@ CREATE TABLE IF NOT EXISTS patient_summaries (
     medications_json  TEXT,     -- JSON: list of Medication dicts (all statuses)
     labs_json         TEXT,     -- JSON: list of LabResult dicts
     encounters_json   TEXT,     -- JSON: list of Encounter dicts
+    procedures_json   TEXT,     -- JSON: list of Procedure dicts
     summary_md        TEXT,     -- Generated markdown summary (NULL until batch pipeline)
     generated_at      TEXT,     -- ISO datetime when summary was generated
     fhir_path         TEXT      -- Absolute path to source FHIR file
@@ -152,6 +153,12 @@ class MedDocDB:
             if "persona" not in cols:
                 conn.execute("ALTER TABLE chat_history ADD COLUMN persona TEXT")
                 logger.info("Migrated chat_history: added persona column")
+            # Lightweight migration: add patient_summaries.procedures_json
+            pcols = {row["name"] for row in
+                     conn.execute("PRAGMA table_info(patient_summaries)").fetchall()}
+            if "procedures_json" not in pcols:
+                conn.execute("ALTER TABLE patient_summaries ADD COLUMN procedures_json TEXT")
+                logger.info("Migrated patient_summaries: added procedures_json column")
         logger.info("Tables created/verified in %s", self.db_path)
 
     # ── NADAC pricing ──────────────────────────────────────────────────────
@@ -351,9 +358,9 @@ class MedDocDB:
                 INSERT OR REPLACE INTO patient_summaries
                     (patient_id, name, age, gender,
                      conditions_json, medications_json,
-                     labs_json, encounters_json,
+                     labs_json, encounters_json, procedures_json,
                      summary_md, generated_at, fhir_path)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     patient.patient_id,
@@ -364,6 +371,7 @@ class MedDocDB:
                     json.dumps([m.model_dump() for m in patient.medications]),
                     json.dumps([l.model_dump() for l in patient.labs]),
                     json.dumps([e.model_dump() for e in patient.encounters]),
+                    json.dumps([p.model_dump() for p in patient.procedures]),
                     summary_md,
                     generated_at,
                     patient.fhir_path,
@@ -386,7 +394,7 @@ class MedDocDB:
         result = dict(row)
         # Deserialize JSON fields
         for field in ("conditions_json", "medications_json",
-                      "labs_json", "encounters_json"):
+                      "labs_json", "encounters_json", "procedures_json"):
             if result.get(field):
                 result[field] = json.loads(result[field])
         return result

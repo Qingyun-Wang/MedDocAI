@@ -19,6 +19,14 @@ from ingestion.medlineplus_ingester import (
     run,
 )
 
+# Pure-function tests (TestStripHtml, TestMakeEmbedText) run anywhere. The classes
+# that parse the real MedlinePlus XML under data/ (gitignored) are skipped when the
+# data is absent (CI).
+_needs_data = pytest.mark.skipif(
+    not os.path.isdir(MEDLINEPLUS_DIR),
+    reason="requires local data/medlineplus (gitignored); skipped in CI",
+)
+
 
 # ---------------------------------------------------------------------------
 # _strip_html
@@ -46,6 +54,7 @@ class TestStripHtml:
 # parse_health_topics
 # ---------------------------------------------------------------------------
 
+@_needs_data
 class TestParseHealthTopics:
     def _xml_path(self):
         files = sorted(
@@ -108,6 +117,7 @@ class TestParseHealthTopics:
 # parse_definitions
 # ---------------------------------------------------------------------------
 
+@_needs_data
 class TestParseDefinitions:
     def test_returns_definitions(self):
         defs = parse_definitions(MEDLINEPLUS_DIR)
@@ -197,6 +207,7 @@ class TestMakeEmbedText:
 # build_chunks
 # ---------------------------------------------------------------------------
 
+@_needs_data
 class TestBuildChunks:
     def _topics(self):
         return parse_health_topics(
@@ -255,6 +266,7 @@ class TestBuildChunks:
 # Integration: dry run
 # ---------------------------------------------------------------------------
 
+@_needs_data
 class TestDryRun:
     def test_dry_run_returns_stats(self):
         stats = run(dry_run=True)

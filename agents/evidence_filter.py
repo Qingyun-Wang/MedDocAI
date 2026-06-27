@@ -92,6 +92,7 @@ def build_patient_evidence(ctx: dict) -> Evidence | None:
     conditions = ctx.get("conditions_json") or ctx.get("conditions") or []
     meds       = ctx.get("medications_json") or ctx.get("medications") or []
     labs       = ctx.get("labs_json") or ctx.get("labs") or []
+    procedures = ctx.get("procedures_json") or ctx.get("procedures") or []
 
     cond_names = [c.get("display", "") for c in conditions if c.get("display")][:10]
     active_meds = [m.get("display", "") for m in meds
@@ -100,8 +101,9 @@ def build_patient_evidence(ctx: dict) -> Evidence | None:
         f"{l.get('display', '')}: {l.get('value', '')} {l.get('unit', '') or ''}".strip()
         for l in labs if l.get("is_abnormal")
     ][:10]
+    proc_names = [p.get("display", "") for p in procedures if p.get("display")][:8]
 
-    if not (cond_names or active_meds or abnormal_labs):
+    if not (cond_names or active_meds or abnormal_labs or proc_names):
         return None
 
     parts = [f"Patient: {ctx.get('name', 'unknown')}, "
@@ -112,6 +114,8 @@ def build_patient_evidence(ctx: dict) -> Evidence | None:
         parts.append("Active medications: " + "; ".join(active_meds))
     if abnormal_labs:
         parts.append("Abnormal lab results: " + "; ".join(abnormal_labs))
+    if proc_names:
+        parts.append("Recent procedures: " + "; ".join(proc_names))
 
     return Evidence(
         source="patient_record",

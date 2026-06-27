@@ -1,0 +1,44 @@
+name: CI
+
+# Phase 1 of CI/CD: fast unit-test gate on every push to main and every PR.
+# Runs the unit suite only — live-API (llm), network, and torch/cross-encoder
+# tests are excluded or auto-skip, so this needs NO secrets and stays fast.
+#
+# Later phases (separate workflows): eval-gate.yml (RAGAS smoke-eval on PRs to
+# main, gated on faithfulness) and deploy.yml (auto-deploy to HF Spaces on merge).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit-tests:
+    name: Unit tests (no secrets)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies (skip torch/sentence-transformers)
+        # sentence-transformers (and its torch dependency) is imported lazily and is
+        # only needed by the cross-encoder reranker — its tests auto-skip when it's
+        # absent. Excluding it keeps the install fast (~30s vs ~3min) and needs no GPU.
+        run: |
+          python -m pip install --upgrade pip
+          grep -vi "sentence-transformers" requirements.txt > requirements-ci.txt
+          pip install -r requirements-ci.txt pytest
+
+      - name: Run unit tests
+        # Exclude live-Claude (llm), live-network, and cross-encoder (rerank) tests —
+        # they need keys / external APIs / torch. The reranker's bi-encoder FALLBACK
+        # path is still covered by the unmarked tests. Tests that read gitignored
+        # data/ files self-skip (data absent in CI).
+        run: pytest -m "not llm and not network and not rerank" -q

@@ -32,6 +32,14 @@ FHIR_DIR = "data/synthea/output_1/fhir"
 SAMPLE_FILE = os.path.join(FHIR_DIR, "Abbott509_Aaron203_44.json")
 RICH_FILE   = os.path.join(FHIR_DIR, "Abbott509_Evan454_49.json")   # F,58yo,13 conditions,6 abnormal labs
 
+# Although the external calls are mocked, these tests still parse real Synthea FHIR
+# files under data/ (gitignored). Skip the whole module when that data is absent
+# (e.g. in CI) so the suite stays green without it.
+pytestmark = pytest.mark.skipif(
+    not os.path.isdir(FHIR_DIR),
+    reason="requires local data/ (gitignored); skipped in CI",
+)
+
 
 # ---------------------------------------------------------------------------
 # Helpers
