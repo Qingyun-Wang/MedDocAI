@@ -25,10 +25,11 @@ logger = logging.getLogger(__name__)
 
 # Map each intent to the tools the Retrieval agent should call
 INTENT_TOOL_MAP: dict[str, list[str]] = {
-    "medication_info":     ["search_drug_labels", "fetch_drug_label"],
+    "medication_info":     ["search_drug_labels", "fetch_drug_label", "explain_drug_by_name"],
     "drug_recall":         ["check_drug_recalls", "check_drug_shortages"],
     "policy_eligibility":  ["lookup_state_eligibility", "lookup_drug_price"],
-    "condition_education": ["search_medlineplus", "explain_condition_snomed"],
+    "condition_education": ["search_medlineplus", "explain_condition_snomed",
+                            "explain_lab_loinc", "explain_procedure_snomed"],
     "patient_summary":     [],   # handled by patient_summary_node (serves stored summary)
     "direct_answer":       [],   # fast path — no retrieval; answered from chat history
                                  # + patient context by the Answer Generator directly
@@ -41,8 +42,10 @@ INTENT_RETRY_EXTRA_TOOLS: dict[str, list[str]] = {
     "medication_info":     ["search_medlineplus", "check_drug_recalls"],
     "drug_recall":         ["search_drug_labels", "fetch_drug_label"],
     "policy_eligibility":  ["search_medlineplus"],
-    "condition_education": ["search_drug_labels"],
-    "general":             ["fetch_drug_label", "check_drug_recalls"],
+    # Live MedlinePlus health-topics search is a RETRY-ONLY fallback for topic
+    # questions the frozen Qdrant index missed (health topics only — not drugs).
+    "condition_education": ["search_drug_labels", "search_medlineplus_live"],
+    "general":             ["fetch_drug_label", "check_drug_recalls", "search_medlineplus_live"],
 }
 
 _SYSTEM = """You are the Router for a healthcare document intelligence assistant.

@@ -85,7 +85,8 @@ class TestRouter:
         out = router_mod.router_node(state)
         assert out["intent"] == "medication_info"
         assert out["drug_name"] == "metformin"
-        assert out["tools_to_call"] == ["search_drug_labels", "fetch_drug_label"]
+        assert out["tools_to_call"] == [
+            "search_drug_labels", "fetch_drug_label", "explain_drug_by_name"]
 
     def test_router_invalid_intent_falls_back(self, monkeypatch):
         import agents.router as router_mod
@@ -140,7 +141,8 @@ class TestRouter:
         })
         # First run: base tools only
         first = router_mod.router_node(new_state("metformin?"))
-        assert first["tools_to_call"] == ["search_drug_labels", "fetch_drug_label"]
+        assert first["tools_to_call"] == [
+            "search_drug_labels", "fetch_drug_label", "explain_drug_by_name"]
 
         # Retry: base tools + retry-extra tools
         retry_state = new_state("metformin?")

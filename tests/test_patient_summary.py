@@ -28,6 +28,13 @@ from tools.sqlite_tool import get_patient_summary
 
 DB_PATH = "data/meddocai.db"
 
+# These tests read the real pre-built SQLite DB under data/ (gitignored). Skip the whole
+# module when it's absent (e.g. in CI) so the suite stays green without it.
+pytestmark = pytest.mark.skipif(
+    not os.path.exists(DB_PATH),
+    reason="requires data/meddocai.db (gitignored); skipped in CI",
+)
+
 
 def _a_patient_with_summary() -> dict:
     db = MedDocDB(DB_PATH)
