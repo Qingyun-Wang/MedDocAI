@@ -8,18 +8,27 @@ Run with:  python -m pytest tests/test_drug_label_chunker.py -v
 """
 
 import hashlib
+import os
 import uuid
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from ingestion.drug_label_chunker import (
+    LABEL_DIR,
     MAX_TOKENS,
     TARGET_SECTIONS,
     _effective_date,
     _extract_sections,
     _section_score,
     build_chunks,
+)
+
+# The mock-based tests below run anywhere. The integration tests read the real FDA
+# label zips under data/ (gitignored) — skip just those when the data is absent (CI).
+_needs_label_data = pytest.mark.skipif(
+    not os.path.isdir(LABEL_DIR),
+    reason="requires local data/openfda/drug/label (gitignored); skipped in CI",
 )
 
 
@@ -239,6 +248,7 @@ class TestBuildChunks:
 # Deduplication logic (integration — uses actual zip files)
 # ---------------------------------------------------------------------------
 
+@_needs_label_data
 class TestDeduplicationIntegration:
     """These tests read actual zip files but don't call any API."""
 

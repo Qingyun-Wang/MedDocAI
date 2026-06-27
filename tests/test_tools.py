@@ -26,6 +26,15 @@ def _has_openai() -> bool:
     return bool(os.getenv("OPENAI_API_KEY"))
 
 
+# The SQLite tool reads data/meddocai.db (gitignored). Skip those tests when it is
+# absent (e.g. in CI) so the suite stays green without the local data.
+_DB_PATH = "data/meddocai.db"
+_needs_db = pytest.mark.skipif(
+    not os.path.isfile(_DB_PATH),
+    reason="requires data/meddocai.db (gitignored); skipped in CI",
+)
+
+
 def _assert_valid_evidence(e: Evidence):
     """Every Evidence must have the core fields populated."""
     assert isinstance(e, Evidence)
@@ -40,6 +49,7 @@ def _assert_valid_evidence(e: Evidence):
 # SQLite tool (no network, no embeddings — always runs)
 # ---------------------------------------------------------------------------
 
+@_needs_db
 class TestSqliteTool:
     def test_drug_price_returns_evidence(self):
         from tools.sqlite_tool import lookup_drug_price
