@@ -141,7 +141,11 @@ Not everything goes through vector search. The Router picks tools by intent:
 | Semantic ("what are the warnings for…") | **Qdrant** vector search | Meaning-based recall over label sections |
 | Drug name / recall lookup | **openFDA** live API | Freshest data, no stale index |
 | Pricing / eligibility / policy | **SQLite** query | Exact structured facts, not fuzzy |
-| Condition / lab patient-education | **MedlinePlus Connect** API | Plain-language, code-driven |
+| Condition / lab / procedure education | **MedlinePlus Connect** API | Plain-language, by clinical code (SNOMED/LOINC/CPT) |
+| Drug education (any drug, no code) | **MedlinePlus Connect** (name fallback) | Reaches the consumer drug monograph by name |
+
+When the frozen vector index misses a topic question, a reviewer retry can reach the **live
+MedlinePlus Web Service** keyword search for current health topics — a self-healing fallback.
 
 FDA labels are **chunked by section** (indications, warnings, contraindications, adverse
 reactions, dosage) rather than fixed token windows, and tagged with `drug_name`,
@@ -238,7 +242,7 @@ streamlit run frontend/app.py
 ### Run the tests / evaluation
 
 ```bash
-pytest -q                                   # 238 unit tests
+pytest -q                                   # 263 tests (data-dependent ones auto-skip without data/)
 python evaluation/run_eval.py               # full RAGAS run (pipeline → scoring)
 python evaluation/run_eval.py --skip-pipeline   # re-score cached answers only
 ```

@@ -54,11 +54,26 @@ def _dedup_key(e: Evidence) -> str:
 
 
 def _is_near_duplicate(a: Evidence, b: Evidence) -> bool:
+    """True if a and b carry essentially the same content. Two signals (either fires):
+
+    - Jaccard > 0.85: classic near-identical text of similar length.
+    - Containment > 0.90: one text is almost entirely a SUBSET of the other. This
+      catches the same source article reached two ways — e.g. MedlinePlus Connect's
+      600-char truncated summary vs the full topic text from the Qdrant index — where
+      the length gap crushes Jaccard (intersection ÷ a much larger union) even though
+      the shorter side is ~fully contained in the longer. The containment rule requires
+      the smaller side to have >= 8 tokens so a short generic line ("no recalls found")
+      can't be spuriously "contained" in an unrelated long passage.
+    """
     ta = set(_normalize(a.text).split())
     tb = set(_normalize(b.text).split())
     if not ta or not tb:
         return False
-    return len(ta & tb) / len(ta | tb) > 0.85
+    inter = len(ta & tb)
+    jaccard = inter / len(ta | tb)
+    smaller = min(len(ta), len(tb))
+    containment = inter / smaller
+    return jaccard > 0.85 or (smaller >= 8 and containment > 0.90)
 
 
 def _dedup(evidence: list[Evidence]) -> list[Evidence]:

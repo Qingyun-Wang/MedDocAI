@@ -107,6 +107,37 @@ class TestDedup:
         ]
         assert len(_dedup(items)) == 2
 
+    def test_cross_source_containment_dedup(self):
+        """The same MedlinePlus article reached two ways — a truncated Connect summary
+        (source=medlineplus_connect) and the full topic from the Qdrant index
+        (source=medlineplus) — must collapse to one, even though the length gap makes
+        Jaccard low. Regression for the CABG double-source bug."""
+        full = ("coronary artery bypass surgery improves blood flow to the heart muscle "
+                "by using a healthy blood vessel from another part of your body to route "
+                "around a blocked artery this restores normal circulation reduces chest "
+                "pain and lowers the risk of heart attack in coronary artery disease")
+        truncated = ("coronary artery bypass surgery improves blood flow to the heart "
+                     "muscle by using a healthy blood vessel")  # subset of `full`
+        items = [
+            _ev("Coronary Artery Bypass Surgery", full, source="medlineplus"),
+            _ev("Coronary Artery Bypass Surgery", truncated, source="medlineplus_connect"),
+        ]
+        kept = _dedup(items)
+        assert len(kept) == 1
+        # keeps the fuller (first-seen) version
+        assert kept[0].source == "medlineplus" and kept[0].text == full
+
+    def test_short_generic_not_over_deduped(self):
+        """A short generic line must NOT be treated as a duplicate of an unrelated long
+        passage just because its few tokens happen to appear in it (min-token guard)."""
+        items = [
+            _ev("recall", "no current recalls found", source="openfda_api"),
+            _ev("label", "metformin is contraindicated in severe renal impairment and "
+                         "may cause lactic acidosis in patients with kidney disease",
+                source="fda_label"),
+        ]
+        assert len(_dedup(items)) == 2
+
 
 # ---------------------------------------------------------------------------
 # Evidence Filter — both paths
