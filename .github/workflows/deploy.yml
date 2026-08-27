@@ -57,7 +57,7 @@ jobs:
 
       - name: Copy the tracked-file allowlist into the Space
         run: |
-          git ls-files --cached --others --exclude-standard \
+          git ls-files \
             | grep -v '^\.gitattributes$' \
             | grep -v '^README\.md$' \
             | while read -r f; do
