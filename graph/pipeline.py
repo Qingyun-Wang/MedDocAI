@@ -36,7 +36,9 @@ from agents.retrieval import retrieval_node
 from agents.reviewer import reviewer_node
 from agents.router import router_node
 from agents.safety_agent import safety_node
+from agents.observability import format_summary, finish_query, instrument_node, start_query
 from agents.state import PipelineState, new_state
+from agents.tracing import traced
 
 logger = logging.getLogger(__name__)
 
@@ -108,13 +110,13 @@ def build_pipeline():
     graph = StateGraph(PipelineState)
 
     # Nodes
-    graph.add_node("router", router_node)
-    graph.add_node("patient_summary", patient_summary_node)
-    graph.add_node("retrieval", retrieval_node)
-    graph.add_node("evidence_filter", evidence_filter_node)
-    graph.add_node("answer_generator", answer_generator_node)
-    graph.add_node("reviewer", reviewer_node)
-    graph.add_node("safety", safety_node)
+    graph.add_node("router", instrument_node("router", router_node))
+    graph.add_node("patient_summary", instrument_node("patient_summary", patient_summary_node))
+    graph.add_node("retrieval", instrument_node("retrieval", retrieval_node))
+    graph.add_node("evidence_filter", instrument_node("evidence_filter", evidence_filter_node))
+    graph.add_node("answer_generator", instrument_node("answer_generator", answer_generator_node))
+    graph.add_node("reviewer", instrument_node("reviewer", reviewer_node))
+    graph.add_node("safety", instrument_node("safety", safety_node))
 
     # Entry: router, then branch — patient_summary serves the stored summary,
     # direct_answer fast-paths to the Answer Generator (no retrieval),
@@ -175,6 +177,37 @@ def get_pipeline():
 # Convenience runner
 # ---------------------------------------------------------------------------
 
+
+def _persist_metrics(state: PipelineState, metrics: dict, patient_context: dict | None) -> None:
+    """Best-effort write of one row to SQLite query_metrics. Never raises.
+
+    Skipped when MEDDOCAI_METRICS != "1" or the DB file is absent — that guard is
+    what stops CI / eval-gate runners from creating a stray data/meddocai.db.
+    """
+    import os
+    if os.getenv("MEDDOCAI_METRICS", "1") != "1":
+        return
+    db_path = os.getenv("MEDDOCAI_DB", "data/meddocai.db")
+    if not os.path.exists(db_path):
+        return
+    try:
+        from ingestion.sqlite_loader import MedDocDB
+        MedDocDB(db_path).save_query_metrics(
+            query_id=metrics.get("query_id", ""),
+            query=state.get("query", ""),
+            intent=state.get("intent", ""),
+            user_role=state.get("user_role", ""),
+            patient_id=(patient_context or {}).get("patient_id"),
+            iterations=state.get("iteration", 0),
+            review_passed=bool(state.get("review_passed", False)),
+            n_evidence=len(state.get("filtered_evidence", []) or []),
+            metrics=metrics,
+        )
+    except Exception as exc:   # noqa: BLE001 — metrics must never break an answer
+        logger.debug("metrics persist skipped: %s", exc)
+
+
+@traced("answer_query", run_type="chain")
 def answer_query(
     query: str,
     patient_context: dict | None = None,
@@ -190,8 +223,14 @@ def answer_query(
     pipeline = get_pipeline()
     initial = new_state(query, patient_context, user_role, max_iterations,
                         conversation_history=conversation_history)
-    # recursion_limit guards against any unexpected cycling beyond our logic
-    final = pipeline.invoke(initial, config={"recursion_limit": 25})
+    start_query(initial["query_id"])
+    try:
+        # recursion_limit guards against any unexpected cycling beyond our logic
+        final = pipeline.invoke(initial, config={"recursion_limit": 25})
+    finally:
+        metrics = finish_query(initial["query_id"])
+    final["metrics"] = metrics
+    _persist_metrics(final, metrics, patient_context)
     return final
 
 
@@ -212,6 +251,15 @@ if __name__ == "__main__":
     print("\n--- TRACE ---")
     for step in final.get("trace", []):
         print(f"  {step}")
+
+    print("\n--- METRICS ---")
+    m = final.get("metrics", {})
+    print(f"  {format_summary(m)}")
+    for c in m.get("calls", []):
+        print(f"    {c['caller']:<18} in={c['input_tokens']:>6} "
+              f"out={c['output_tokens']:>5} {c['latency_ms']:>8.0f}ms")
+    if m.get("by_node"):
+        print("  nodes: " + ", ".join(f"{k}={v:.0f}ms" for k, v in m["by_node"].items()))
 
     print("\n--- FINAL ANSWER ---")
     print(final.get("final_answer", "(no answer)"))

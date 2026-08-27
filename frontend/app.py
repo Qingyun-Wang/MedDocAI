@@ -46,13 +46,6 @@ def _get_db():
     return MedDocDB("data/meddocai.db")
 
 
-@st.cache_resource(show_spinner=False)
-def _get_pipeline():
-    # Building the pipeline + warming the model singletons happens once.
-    from graph.pipeline import get_pipeline
-    return get_pipeline()
-
-
 @st.cache_data(show_spinner=False)
 def _patient_list():
     return _get_db().list_patients()
@@ -60,12 +53,16 @@ def _patient_list():
 
 def _run_query(query: str, patient_context: dict | None, role: str,
                conversation_history: list[dict]) -> dict:
-    """Invoke the compiled pipeline (mirrors graph.pipeline.answer_query)."""
-    from agents.state import new_state
-    pipeline = _get_pipeline()
-    state = new_state(query, patient_context, role, max_iterations=2,
-                      conversation_history=conversation_history)
-    return pipeline.invoke(state, config={"recursion_limit": 25})
+    """Run one query through the pipeline.
+
+    Delegates to graph.pipeline.answer_query rather than re-implementing it: that
+    is the single instrumented entry point (observability + tracing), so a local
+    copy of the invoke would silently bypass all per-query metrics. The compiled
+    graph is already a module-level singleton inside get_pipeline().
+    """
+    from graph.pipeline import answer_query
+    return answer_query(query, patient_context, role, max_iterations=2,
+                        conversation_history=conversation_history)
 
 
 # ---------------------------------------------------------------------------
@@ -87,6 +84,7 @@ def _load_history(patient_id: str, persona: str) -> list[dict]:
                 "disclaimers": blob.get("disclaimers", []),
                 "evidence": blob.get("evidence", []),
                 "trace": blob.get("trace", []),
+                "metrics": blob.get("metrics", {}),
             })
     return messages
 
@@ -108,6 +106,7 @@ def _save_assistant_message(patient_id: str, persona: str, msg: dict) -> None:
             "evidence": msg.get("evidence", []),
             "disclaimers": msg.get("disclaimers", []),
             "trace": msg.get("trace", []),
+            "metrics": msg.get("metrics", {}),
         },
     )
 
@@ -218,6 +217,12 @@ def _render_assistant(msg: dict) -> None:
     for d in msg.get("disclaimers", []):
         st.caption(d)
 
+    # Per-query cost/latency/token summary (observability)
+    metrics = msg.get("metrics") or {}
+    if metrics:
+        from agents.observability import format_summary
+        st.caption(f"⏱ {format_summary(metrics)}")
+
     evidence = msg.get("evidence", [])
     trace = msg.get("trace", [])
 
@@ -327,6 +332,7 @@ def main():
                 "disclaimers": final.get("disclaimers", []),
                 "evidence": evidence,
                 "trace": final.get("trace", []),
+                "metrics": final.get("metrics", {}),
             }
             _render_assistant(assistant_msg)
             st.session_state.messages.append(assistant_msg)

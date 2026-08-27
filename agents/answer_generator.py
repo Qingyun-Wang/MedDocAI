@@ -151,6 +151,7 @@ def answer_generator_node(state: PipelineState) -> dict:
         system=_system_for_role(role),
         user=_build_user_prompt(state, direct_mode=direct_mode),
         max_tokens=600 if direct_mode else 1200,
+        caller="answer_generator",
     )
 
     # Build the citation list from the evidence the model was given

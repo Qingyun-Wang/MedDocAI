@@ -116,6 +116,7 @@ def reviewer_node(state: PipelineState) -> dict:
         tool_description="Judge the answer's relevance and faithfulness",
         input_schema=_INPUT_SCHEMA,
         max_tokens=700,
+        caller="reviewer",
     )
 
     result = ReviewResult(

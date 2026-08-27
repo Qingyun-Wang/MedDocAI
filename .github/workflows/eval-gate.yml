@@ -1,0 +1,96 @@
+name: Eval Gate
+
+# Phase 2 of CI/CD: a RAGAS smoke-eval that BLOCKS a PR when answer quality
+# regresses. Unit tests prove the code runs; this proves it still answers well.
+#
+# Scope — the 10 `med_anon` questions only. They are the SQLite-free slice:
+# medication_info routes to Qdrant / openFDA / MedlinePlus, never sqlite_tool.
+#   - policy / med_patient / care_mgr need data/meddocai.db, which is gitignored
+#     and therefore absent on a runner — they would fail 100% of the time.
+#   - recall reads LIVE openFDA listings against frozen reference strings, so it
+#     goes stale on its own. A gate that reddens because the FDA published a new
+#     shortage notice is a gate people disable. Those run in the full local eval.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'agents/**'
+      - 'graph/**'
+      - 'tools/**'
+      - 'models/**'
+      - 'evaluation/**'
+      - 'requirements.txt'
+  workflow_dispatch:
+
+concurrency:
+  group: eval-gate-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ragas-smoke:
+    name: RAGAS smoke-eval (med_anon)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # Skip drafts, and skip fork PRs — a fork must never reach repo secrets.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.draft == false &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Cache cross-encoder model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-crossencoder-v1
+
+      - name: Install dependencies (FULL — reranker parity matters here)
+        # Unlike ci.yml we do NOT strip sentence-transformers. The thresholds below
+        # were calibrated with the cross-encoder active; without it the Evidence
+        # Filter silently falls back to bi-encoder ordering with different
+        # thresholds, shifting the context metrics by an unknown amount and making
+        # the calibrated numbers meaningless.
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run RAGAS smoke-eval and gate on quality
+        # Thresholds carry ~0.11-0.14 margin under the med_anon baseline
+        # (faithfulness 0.962, relevancy 0.927, recall 0.950, precision 0.839).
+        # At n=10 one question swinging 1.0 -> 0.5 moves the mean by 0.05, so the
+        # margins absorb about two questions of drift without going flaky.
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          QDRANT_URL: ${{ secrets.QDRANT_URL }}
+          QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
+          OPENFDA_API_KEY: ${{ secrets.OPENFDA_API_KEY }}
+          MEDDOCAI_METRICS: "0"     # don't create a stray SQLite file on the runner
+        run: |
+          python -m evaluation.run_eval \
+            --ids med_anon_01,med_anon_02,med_anon_03,med_anon_04,med_anon_05,med_anon_06,med_anon_07,med_anon_08,med_anon_09,med_anon_10 \
+            --out "$RUNNER_TEMP/evalout" \
+            --tag ci \
+            --fail-under faithfulness=0.85 \
+            --fail-under answer_relevancy=0.82 \
+            --fail-under context_recall=0.82 \
+            --fail-under context_precision=0.70 \
+            --min-scored-frac 0.8 \
+            --max-pipeline-errors 0
+
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ragas-eval-report
+          path: ${{ runner.temp }}/evalout

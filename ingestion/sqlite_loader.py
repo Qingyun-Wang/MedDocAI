@@ -8,6 +8,7 @@ Tables:
   nadac_pricing      — drug prices (most recent per NDC, loaded from nadac_2026.csv)
   eligibility        — Medicaid income eligibility by state (wide format)
   chat_history       — per-session chat messages with source citations
+  query_metrics      — per-query tokens/cost/latency (observability)
 
 Usage:
     from ingestion.sqlite_loader import MedDocDB
@@ -107,6 +108,31 @@ CREATE TABLE IF NOT EXISTS chat_history (
 CREATE INDEX IF NOT EXISTS idx_nadac_drug_name  ON nadac_pricing(drug_name);
 CREATE INDEX IF NOT EXISTS idx_chat_session     ON chat_history(session_id);
 CREATE INDEX IF NOT EXISTS idx_chat_patient     ON chat_history(patient_id);
+
+CREATE TABLE IF NOT EXISTS query_metrics (
+    query_id          TEXT PRIMARY KEY,
+    session_id        TEXT,
+    timestamp         TEXT NOT NULL,
+    query             TEXT,
+    intent            TEXT,
+    user_role         TEXT,
+    patient_id        TEXT,          -- NULL for anonymous queries
+    iterations        INTEGER,
+    review_passed     INTEGER,
+    n_evidence        INTEGER,
+    llm_calls         INTEGER,
+    input_tokens      INTEGER,
+    output_tokens     INTEGER,
+    total_tokens      INTEGER,
+    cost_usd          REAL,          -- NULL when the model has no price entry
+    total_latency_ms  INTEGER,
+    node_latency_json TEXT,          -- JSON: {node: ms}
+    calls_json        TEXT,          -- JSON: per-LLM-call detail
+    error             TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_metrics_ts     ON query_metrics(timestamp);
+CREATE INDEX IF NOT EXISTS idx_metrics_intent ON query_metrics(intent);
 """
 
 
@@ -123,6 +149,7 @@ class MedDocDB:
 
     def __init__(self, db_path: str = DEFAULT_DB_PATH):
         self.db_path = db_path
+        self._metrics_ready = False   # lazily ensured by save_query_metrics
 
     # ── Connection management ──────────────────────────────────────────────
 
@@ -432,6 +459,90 @@ class MedDocDB:
             ).fetchone()[0]
 
     # ── Chat history ───────────────────────────────────────────────────────
+
+    # ── Observability ──────────────────────────────────────────────────────
+
+    _QUERY_METRICS_DDL = """
+    CREATE TABLE IF NOT EXISTS query_metrics (
+        query_id          TEXT PRIMARY KEY,
+        session_id        TEXT,
+        timestamp         TEXT NOT NULL,
+        query             TEXT,
+        intent            TEXT,
+        user_role         TEXT,
+        patient_id        TEXT,
+        iterations        INTEGER,
+        review_passed     INTEGER,
+        n_evidence        INTEGER,
+        llm_calls         INTEGER,
+        input_tokens      INTEGER,
+        output_tokens     INTEGER,
+        total_tokens      INTEGER,
+        cost_usd          REAL,
+        total_latency_ms  INTEGER,
+        node_latency_json TEXT,
+        calls_json        TEXT,
+        error             TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_metrics_ts     ON query_metrics(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_metrics_intent ON query_metrics(intent);
+    """
+
+    def save_query_metrics(
+        self,
+        query_id: str,
+        metrics: dict,
+        query: str = "",
+        intent: str = "",
+        user_role: str = "",
+        patient_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        iterations: int = 0,
+        review_passed: bool = False,
+        n_evidence: int = 0,
+        error: Optional[str] = None,
+    ) -> None:
+        """Insert one per-query observability row.
+
+        Self-ensures its DDL: nothing calls create_tables() at app startup (the
+        Docker entrypoint only seeds Qdrant), and the already-deployed Space DB
+        predates this table — so the first write must be able to create it.
+        """
+        with self._conn() as conn:
+            if not self._metrics_ready:
+                conn.executescript(self._QUERY_METRICS_DDL)
+                self._metrics_ready = True
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO query_metrics
+                    (query_id, session_id, timestamp, query, intent, user_role,
+                     patient_id, iterations, review_passed, n_evidence, llm_calls,
+                     input_tokens, output_tokens, total_tokens, cost_usd,
+                     total_latency_ms, node_latency_json, calls_json, error)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    query_id,
+                    session_id,
+                    datetime.utcnow().isoformat(),
+                    query,
+                    intent,
+                    user_role,
+                    patient_id,
+                    iterations,
+                    1 if review_passed else 0,
+                    n_evidence,
+                    metrics.get("llm_calls", 0),
+                    metrics.get("input_tokens", 0),
+                    metrics.get("output_tokens", 0),
+                    metrics.get("total_tokens", 0),
+                    metrics.get("cost_usd"),
+                    int(metrics.get("total_latency_ms") or 0),
+                    json.dumps(metrics.get("by_node", {})),
+                    json.dumps(metrics.get("calls", [])),
+                    error,
+                ),
+            )
 
     def save_chat_message(
         self,

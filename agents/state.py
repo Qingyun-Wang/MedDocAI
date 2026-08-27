@@ -10,6 +10,8 @@ Helper Pydantic models (RouterDecision, ReviewResult) structure the LLM outputs.
 
 from __future__ import annotations
 
+import uuid
+
 from typing import Optional, TypedDict
 
 from pydantic import BaseModel, Field
@@ -120,6 +122,10 @@ class PipelineState(TypedDict, total=False):
     # --- Diagnostics (for tracing/debugging) ---
     trace: list[str]                  # human-readable log of what each node did
 
+    # --- Observability (populated by graph.pipeline.answer_query) ---
+    query_id: str
+    metrics: dict
+
 
 # ---------------------------------------------------------------------------
 # State helpers
@@ -178,4 +184,6 @@ def new_state(
         final_answer="",
         disclaimers=[],
         trace=[],
+        query_id=str(uuid.uuid4()),
+        metrics={},
     )

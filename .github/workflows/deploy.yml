@@ -1,0 +1,116 @@
+name: Deploy to HF Spaces
+
+# Phase 3 of CI/CD: ship to the live HuggingFace Space, but only from a commit
+# that CI already went green on. Automates what was previously a hand-run
+# sequence of staging, LFS handling, and README frontmatter surgery.
+#
+# THREE THINGS THIS MUST NEVER DO:
+#   1. Ship a secret. The allowlist is `git ls-files` on a fresh checkout, so
+#      .env / data/ / the gitignored planning docs are absent BY CONSTRUCTION —
+#      there is no exclude-list to get wrong.
+#   2. Overwrite the Space's .gitattributes. GitHub's says `*.db binary`; the
+#      Space's says `*.db filter=lfs …`. Copying ours over would strip the LFS
+#      filter and HF would reject the 4.5 MB database as a plain binary.
+#   3. Delete data/meddocai.db. It lives only in the Space (it is gitignored
+#      here), so we copy files in ADDITIVELY and never use --delete.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run every check but do not push"
+        type: boolean
+        default: true
+
+jobs:
+  deploy:
+    name: Push to HuggingFace Space
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - name: Checkout the exact commit CI validated
+        uses: actions/checkout@v4
+        with:
+          # Pin to the tested SHA, not floating main — main may have moved on.
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+
+      - name: Clone the Space (LFS pointers only)
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_USERNAME: ${{ vars.HF_USERNAME }}
+          HF_SPACE: ${{ vars.HF_SPACE }}
+        run: |
+          git lfs install
+          # SKIP_SMUDGE: never download the 4.5 MB blob — the pointer file is
+          # left untouched on disk and re-committed unchanged.
+          GIT_LFS_SKIP_SMUDGE=1 git clone --depth 1 \
+            "https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_USERNAME}/${HF_SPACE}" \
+            hf-space
+
+      - name: Copy the tracked-file allowlist into the Space
+        run: |
+          git ls-files --cached --others --exclude-standard \
+            | grep -v '^\.gitattributes$' \
+            | grep -v '^README\.md$' \
+            | while read -r f; do
+                mkdir -p "hf-space/$(dirname "$f")"
+                cp "$f" "hf-space/$f"
+              done
+          # The Space README is the HF frontmatter + our README verbatim.
+          cat .github/hf-space-header.md README.md > hf-space/README.md
+
+      - name: Safety assertions (fail loudly rather than push a leak)
+        run: |
+          set -e
+          test ! -f hf-space/.env                     || { echo "LEAK: .env"; exit 1; }
+          test ! -f hf-space/CLAUDE.md                || { echo "LEAK: CLAUDE.md"; exit 1; }
+          test ! -f hf-space/PROJECT_PLAN.md          || { echo "LEAK: PROJECT_PLAN.md"; exit 1; }
+          test ! -f hf-space/INTERVIEW_PREP.md        || { echo "LEAK: INTERVIEW_PREP.md"; exit 1; }
+          test ! -f hf-space/executed_steps.md        || { echo "LEAK: executed_steps.md"; exit 1; }
+          grep -q 'filter=lfs' hf-space/.gitattributes || { echo "LFS filter lost"; exit 1; }
+          head -1 hf-space/data/meddocai.db | grep -q 'version https://git-lfs' \
+            || { echo "DB is no longer an LFS pointer"; exit 1; }
+          head -1 hf-space/README.md | grep -q '^---$' || { echo "frontmatter missing"; exit 1; }
+          echo "All safety assertions passed."
+
+      - name: Stage and show the diff
+        id: stage
+        working-directory: hf-space
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No changes to deploy."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git diff --cached --stat
+            # The database must never appear in a deploy diff.
+            if git diff --cached --name-only | grep -q '^data/meddocai\.db$'; then
+              echo "REFUSING: deploy would modify data/meddocai.db"; exit 1
+            fi
+          fi
+
+      - name: Push to the Space
+        if: steps.stage.outputs.changed == 'true' && inputs.dry_run != true
+        working-directory: hf-space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          HF_USERNAME: ${{ vars.HF_USERNAME }}
+          HF_SPACE: ${{ vars.HF_SPACE }}
+        run: |
+          git commit -m "Deploy ${{ github.event.workflow_run.head_sha || github.sha }}"
+          git push "https://user:${HF_TOKEN}@huggingface.co/spaces/${HF_USERNAME}/${HF_SPACE}" main
+
+      - name: Dry-run notice
+        if: inputs.dry_run == true
+        run: echo "DRY RUN — all checks passed, nothing pushed."

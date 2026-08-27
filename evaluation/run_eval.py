@@ -79,10 +79,19 @@ def load_dataset(limit: int | None, ids: list[str] | None) -> list[dict]:
 
 
 def resolve_patients(questions: list[dict]) -> dict[str, dict]:
-    """Map patient name-prefixes used in the dataset to full patient contexts."""
+    """Map patient name-prefixes used in the dataset to full patient contexts.
+
+    Short-circuits when no selected question needs a patient. This matters for CI:
+    data/ is gitignored, so opening MedDocDB on a runner would create an empty
+    SQLite file and then fail on `no such table: patient_summaries` — even for a
+    subset (e.g. med_anon) that never touches patient data.
+    """
+    needed = {q["patient"] for q in questions if q.get("patient")}
+    if not needed:
+        return {}
+
     from ingestion.sqlite_loader import MedDocDB
     db = MedDocDB("data/meddocai.db")
-    needed = {q["patient"] for q in questions if q.get("patient")}
     resolved: dict[str, dict] = {}
     for p in db.list_patients():
         for prefix in needed:
@@ -98,7 +107,8 @@ def resolve_patients(questions: list[dict]) -> dict[str, dict]:
 # Phase A — run the pipeline
 # ---------------------------------------------------------------------------
 
-def run_pipeline_phase(questions: list[dict], ts: str) -> list[dict]:
+def run_pipeline_phase(questions: list[dict], ts: str,
+                       results_dir: str = RESULTS_DIR) -> list[dict]:
     """Run each question through the agent pipeline. Caches results to disk."""
     from graph.pipeline import answer_query
 
@@ -142,8 +152,8 @@ def run_pipeline_phase(questions: list[dict], ts: str) -> list[dict]:
         status = "ERR" if row["error"] else f"{row['latency_s']:>5.1f}s  iter={row['iterations']}"
         print(f"  [{i:>2}/{len(questions)}] {q['id']:<14} {status}")
 
-    os.makedirs(RESULTS_DIR, exist_ok=True)
-    cache_path = os.path.join(RESULTS_DIR, f"answers_{ts}.json")
+    os.makedirs(results_dir, exist_ok=True)
+    cache_path = os.path.join(results_dir, f"answers_{ts}.json")
     with open(cache_path, "w", encoding="utf-8") as f:
         json.dump(rows, f, indent=2, ensure_ascii=False)
     print(f"\nPipeline outputs cached -> {cache_path}")
@@ -228,8 +238,9 @@ def _numeric(values: list) -> list[float]:
     return [v for v in values if isinstance(v, (int, float))]
 
 
-def build_report(rows: list[dict], ts: str) -> str:
-    """Write JSON + markdown reports. Returns the markdown summary text."""
+def build_report(rows: list[dict], ts: str,
+                 results_dir: str = RESULTS_DIR) -> tuple[str, dict]:
+    """Write JSON + markdown reports. Returns (markdown, summary dict)."""
     # Aggregates: overall + per category
     def agg(subset: list[dict]) -> dict:
         out = {}
@@ -248,7 +259,8 @@ def build_report(rows: list[dict], ts: str) -> str:
                         for c in categories},
     }
 
-    json_path = os.path.join(RESULTS_DIR, f"eval_{ts}.json")
+    os.makedirs(results_dir, exist_ok=True)
+    json_path = os.path.join(results_dir, f"eval_{ts}.json")
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump({"summary": summary, "rows": rows}, f, indent=2, ensure_ascii=False)
 
@@ -290,12 +302,80 @@ def build_report(rows: list[dict], ts: str) -> str:
             f"{r['iterations']} | {r['latency_s']}s |")
 
     md = "\n".join(lines)
-    md_path = os.path.join(RESULTS_DIR, f"eval_{ts}.md")
+    md_path = os.path.join(results_dir, f"eval_{ts}.md")
     with open(md_path, "w", encoding="utf-8") as f:
         f.write(md)
 
     print(f"\nReports written:\n  {json_path}\n  {md_path}")
-    return md
+    return md, summary
+
+
+
+# ---------------------------------------------------------------------------
+# Quality gate (used by .github/workflows/eval-gate.yml)
+# ---------------------------------------------------------------------------
+
+def check_gate(
+    summary: dict,
+    rows: list[dict],
+    thresholds: dict,
+    min_scored_frac: float = 0.8,
+    max_pipeline_errors: int = 0,
+) -> tuple[bool, list[str]]:
+    """Decide whether this run clears the quality bar. FAIL-CLOSED.
+
+    A score can be a float, None, or the string "error: ...". `_numeric()` silently
+    drops the last two when averaging, which means a run where 8/10 rows failed
+    would report the mean of the 2 survivors and look great. So three separate
+    rules guard that, and a MISSING aggregate is a failure, never a pass.
+
+    Returns (passed, reasons).
+    """
+    reasons: list[str] = []
+    n = len(rows)
+
+    n_err = sum(1 for r in rows if r.get("error"))
+    if n_err > max_pipeline_errors:
+        reasons.append(f"{n_err} pipeline error(s) > allowed {max_pipeline_errors}")
+
+    overall = summary.get("overall", {}) or {}
+    for metric, floor in thresholds.items():
+        value = overall.get(metric)
+
+        # Rule 1 — a missing aggregate is a failure, not a pass.
+        if value is None:
+            reasons.append(f"{metric}: no numeric score produced (fail-closed)")
+            continue
+
+        # Rule 2 — enough rows must actually have been scored.
+        scored = len(_numeric([r.get("scores", {}).get(metric) for r in rows]))
+        frac = (scored / n) if n else 0.0
+        if frac < min_scored_frac:
+            reasons.append(
+                f"{metric}: only {scored}/{n} rows scored "
+                f"({frac:.0%} < {min_scored_frac:.0%}) — judge errors suspected"
+            )
+            continue
+
+        # Rule 3 — the actual quality bar.
+        if value < floor:
+            reasons.append(f"{metric} {value:.4f} < {floor:.2f}")
+
+    return (not reasons), reasons
+
+
+def _parse_thresholds(pairs: list[str] | None) -> dict:
+    """Parse repeated --fail-under METRIC=FLOAT into {metric: float}."""
+    out: dict[str, float] = {}
+    for raw in pairs or []:
+        if "=" not in raw:
+            raise SystemExit(f"--fail-under expects METRIC=FLOAT, got: {raw}")
+        metric, _, value = raw.partition("=")
+        metric = metric.strip()
+        if metric not in METRICS:
+            raise SystemExit(f"unknown metric {metric!r}; choose from {METRICS}")
+        out[metric] = float(value)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -311,9 +391,22 @@ def main():
     parser.add_argument("--skip-pipeline", type=str, default=None,
                         help="Path to a cached answers_*.json — score it without "
                              "re-running the pipeline")
+    parser.add_argument("--out", type=str, default=RESULTS_DIR,
+                        help="Directory for the report files (CI writes outside the repo)")
+    parser.add_argument("--tag", type=str, default=None,
+                        help="Use this instead of a timestamp in filenames, so CI "
+                             "knows the path without globbing (e.g. --tag ci)")
+    parser.add_argument("--fail-under", action="append", metavar="METRIC=FLOAT",
+                        help="Fail (exit 1) if the overall METRIC is below FLOAT. "
+                             "Repeatable. Passing any of these enables the gate.")
+    parser.add_argument("--min-scored-frac", type=float, default=0.8,
+                        help="Per gated metric, the minimum fraction of rows that must "
+                             "have a numeric score (guards against judge errors)")
+    parser.add_argument("--max-pipeline-errors", type=int, default=0,
+                        help="Maximum rows allowed to have a pipeline error")
     args = parser.parse_args()
 
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    ts = args.tag or datetime.now().strftime("%Y%m%d_%H%M%S")
 
     if args.skip_pipeline:
         with open(args.skip_pipeline, encoding="utf-8") as f:
@@ -326,14 +419,35 @@ def main():
     else:
         ids = args.ids.split(",") if args.ids else None
         questions = load_dataset(args.limit, ids)
-        rows = run_pipeline_phase(questions, ts)
+        rows = run_pipeline_phase(questions, ts, results_dir=args.out)
 
     rows = asyncio.run(score_phase(rows))
-    md = build_report(rows, ts)
+    md, summary = build_report(rows, ts, results_dir=args.out)
 
     # Console summary (top section of the markdown)
     print("\n" + "\n".join(md.split("\n## Per-question")[0].splitlines()))
 
+    # ---- Quality gate (only active when --fail-under was passed) ----
+    thresholds = _parse_thresholds(args.fail_under)
+    if not thresholds:
+        return 0
+
+    passed, reasons = check_gate(
+        summary, rows, thresholds,
+        min_scored_frac=args.min_scored_frac,
+        max_pipeline_errors=args.max_pipeline_errors,
+    )
+    print("\n" + "=" * 60)
+    if passed:
+        print("QUALITY GATE: PASS")
+        for metric, floor in thresholds.items():
+            print(f"  OK  {metric}: {summary['overall'][metric]:.4f} >= {floor:.2f}")
+        return 0
+    for reason in reasons:
+        print(f"GATE FAIL: {reason}")
+    print("QUALITY GATE: FAIL")
+    return 1
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

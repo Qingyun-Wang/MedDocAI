@@ -15,6 +15,7 @@
   <img alt="RAGAS" src="https://img.shields.io/badge/RAGAS-evaluation-4B8BBE">
   <img alt="Docker" src="https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white">
   <a href="https://github.com/Qingyun-Wang/MedDocAI/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Qingyun-Wang/MedDocAI/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/Qingyun-Wang/MedDocAI/actions/workflows/eval-gate.yml"><img alt="Eval Gate" src="https://github.com/Qingyun-Wang/MedDocAI/actions/workflows/eval-gate.yml/badge.svg"></a>
 </p>
 
 **▶️ Try it live: [huggingface.co/spaces/QingyunWang/MedDocAI](https://huggingface.co/spaces/QingyunWang/MedDocAI)** — ask a real medication, condition, or Medicaid-policy question and watch the cited, source-grounded answer build. *(Free Space; the first request may take ~30s while it wakes.)*
@@ -182,6 +183,47 @@ and `med_patient` context recall (~0.66) is a retrieval-coverage target for a fu
 
 ---
 
+## Operations — measured, gated, auto-deployed
+
+Quality is not the only thing measured; so is what each answer costs.
+
+**Per-query observability.** Every Claude call records latency and token usage
+(previously discarded), so each query yields a cost breakdown — persisted to a
+SQLite `query_metrics` table and surfaced in the UI:
+
+```
+31.2s · 3 LLM calls · 11,859 tok · $0.0451
+  router             in=1606  out=169    3115ms
+  answer_generator   in=3888  out=523   11454ms
+  reviewer           in=5570  out=103    2363ms
+  nodes: router=3362ms, retrieval=4278ms, evidence_filter=9739ms,
+         answer_generator=11455ms, reviewer=2363ms, safety=1ms
+```
+
+Two things fall straight out of that: the **Reviewer is the largest input consumer**
+(it re-reads all the evidence — a prime prompt-caching target), and
+**`evidence_filter` costs ~9.7s with zero LLM calls** — that is the cross-encoder,
+i.e. a third of the latency is local compute, not the API.
+
+**LangSmith tracing** gives one trace per query, with nested spans per agent — the
+corrective-RAG retry shows up as a second `answer_generator` span under the same
+root. It is off unless a flag *and* a key are both set, so it never runs in tests,
+CI, or on the public demo.
+
+**CI/CD — three gates.**
+
+| Workflow | Trigger | Gate |
+|---|---|---|
+| `ci.yml` | every push / PR | unit tests (no secrets, no torch — fast) |
+| `eval-gate.yml` | PRs to `main` | **RAGAS smoke-eval; the PR fails if faithfulness/relevancy/recall/precision drop below calibrated floors** |
+| `deploy.yml` | after CI passes on `main` | auto-deploy to HF Spaces (secrets-safe, LFS-preserving) |
+
+The eval gate is **fail-closed**: a missing score, or too few rows actually scored,
+fails the build rather than passing on the average of the survivors — a run where
+8 of 10 questions error out must not look like a 1.0.
+
+---
+
 ## Tech stack
 
 | Component | Technology |
@@ -194,8 +236,9 @@ and `med_patient` context recall (~0.66) is a retrieval-coverage target for a fu
 | Structured data | **SQLite** |
 | Frontend | **Streamlit** |
 | Evaluation | **RAGAS** |
-| Observability | LangSmith (optional) |
-| Deployment | **Docker Compose** |
+| Observability | **LangSmith** tracing + per-query token/cost/latency in SQLite |
+| Deployment | **Docker Compose**, auto-deployed to HF Spaces by GitHub Actions |
+| CI/CD | **GitHub Actions** — unit tests, RAGAS eval gate, auto-deploy |
 
 ---
 
@@ -281,6 +324,9 @@ MedDocAI/
 - **Pre-computed patient summaries** — the offline batch layer feeds the online chat layer.
 - **Honest evaluation** — an independent-judge RAGAS harness with source-verified references,
   used to *find* weaknesses, not to produce a vanity score.
+- **Cost & latency instrumentation** — token usage captured at the SDK seam, priced
+  per model, attributed per agent; an unpriced model reports `None`, never a fake $0.00.
+- **Quality-gated CI** — a RAGAS smoke-eval blocks PRs that regress answer quality.
 - **One codebase, two deployments** — env-driven Qdrant client + snapshot-migration seeding
   for a clean, reproducible container setup.
 

@@ -181,6 +181,7 @@ def router_node(state: PipelineState) -> dict:
         user=_build_user_prompt(state),
         tool_name="route_query",
         tool_description="Classify and route the healthcare query",
+        caller="router",
         input_schema=_INPUT_SCHEMA,
         max_tokens=600,
     )
