@@ -36,6 +36,15 @@ MAX_EVIDENCE = 8          # final cap on RETRIEVED evidence (patient record is e
 BI_ENCODER_THRESHOLD = 0.30
 NONSCORED_PRIORITY = 0.55
 
+# --- R9 fan-out path ---
+# Each sub-query's chunks are reranked against THAT sub-query, then merged
+# round-robin so every drug gets its best chunk before any drug gets a second.
+PER_SUBQUERY_KEEP = 2
+FANOUT_MAX_EVIDENCE = 10   # only modestly above MAX_EVIDENCE: instrumentation showed
+                           # the Reviewer re-reads the whole evidence block and is the
+                           # pipeline's largest input consumer, so each extra chunk is
+                           # paid for twice (generate + review).
+
 # Intents for which the patient's own record is relevant grounding.
 # (Policy/eligibility and general questions don't need patient clinical context.)
 CLINICAL_INTENTS = {"medication_info", "condition_education", "drug_recall"}
@@ -162,6 +171,41 @@ def _fallback_order(evidence: list[Evidence]) -> list[Evidence]:
     return kept[:MAX_EVIDENCE]
 
 
+def _rerank_by_sub_query(evidence: list[Evidence], fallback_query: str) -> list[Evidence]:
+    """Rerank each sub-query's evidence against ITS OWN sub-query, then interleave.
+
+    This is the actual R9 fix. Reranking a per-drug label section against the diffuse
+    question ("what should I watch for across their meds?") scores it low and drops it;
+    reranking it against "metformin adverse reactions" scores it correctly.
+
+    Untagged items (from entity-driven tools, which ignore the query text) are graded
+    against the original user query as before.
+
+    Merge is ROUND-ROBIN across groups, not global-best: a global sort would let one
+    drug with strong lexical overlap take every slot under the cap, which is exactly
+    the coverage failure we are fixing.
+    """
+    groups: dict[str, list[Evidence]] = {}
+    for e in evidence:
+        groups.setdefault((e.metadata or {}).get("sub_query") or "", []).append(e)
+
+    ranked: dict[str, list[Evidence]] = {}
+    for sub_query, items in groups.items():
+        query = sub_query or fallback_query
+        scored = reranker.rerank(query, items, top_k=None)
+        keep = [e for e in scored if (e.score or 0.0) >= RERANK_MIN_SCORE]
+        # An untagged group is not a per-drug bucket, so it gets no per-drug quota.
+        ranked[sub_query] = keep if sub_query == "" else keep[:PER_SUBQUERY_KEEP]
+
+    merged: list[Evidence] = []
+    for rank in range(max((len(v) for v in ranked.values()), default=0)):
+        for sub_query in groups:                       # dict preserves insertion order
+            bucket = ranked.get(sub_query, [])
+            if rank < len(bucket):
+                merged.append(bucket[rank])
+    return merged
+
+
 def evidence_filter_node(state: PipelineState) -> dict:
     """LangGraph node: dedup → cross-encoder rerank → trim."""
     raw = state.get("raw_evidence", [])
@@ -170,17 +214,25 @@ def evidence_filter_node(state: PipelineState) -> dict:
     deduped = _dedup(raw)
 
     # Step 2: rerank (or fall back to bi-encoder order)
+    fanned_out = any((e.metadata or {}).get("sub_query") for e in deduped)
+
     if reranker.is_available() and deduped:
         # Rerank against the ORIGINAL user query — cross-encoders judge relevance
         # to what the user actually asked, not the keyword-enriched shaped query.
         query = state.get("query", "")
-        reranked = reranker.rerank(query, deduped, top_k=None)
-        # Drop clearly-irrelevant items, then cap
-        filtered = [e for e in reranked if (e.score or 0.0) >= RERANK_MIN_SCORE]
-        filtered = filtered[:MAX_EVIDENCE]
-        method = "cross-encoder"
+        if fanned_out:
+            filtered = _rerank_by_sub_query(deduped, query)[:FANOUT_MAX_EVIDENCE]
+            method = "cross-encoder/fan-out"
+        else:
+            reranked = reranker.rerank(query, deduped, top_k=None)
+            # Drop clearly-irrelevant items, then cap
+            filtered = [e for e in reranked if (e.score or 0.0) >= RERANK_MIN_SCORE]
+            filtered = filtered[:MAX_EVIDENCE]
+            method = "cross-encoder"
     else:
         filtered = _fallback_order(deduped)
+        if fanned_out:
+            filtered = filtered[:FANOUT_MAX_EVIDENCE]
         method = "bi-encoder-fallback"
 
     # Inject the patient record as a first-class evidence item for clinical intents.
@@ -197,7 +249,8 @@ def evidence_filter_node(state: PipelineState) -> dict:
     trace = state.get("trace", [])
     trace = trace + [
         f"Filter: {len(raw)} raw -> {len(deduped)} deduped -> "
-        f"{len(filtered)} kept ({method}, cap={MAX_EVIDENCE}, "
+        f"{len(filtered)} kept ({method}, "
+        f"cap={FANOUT_MAX_EVIDENCE if fanned_out else MAX_EVIDENCE}, "
         f"patient_record={'yes' if patient_injected else 'no'})"
     ]
 

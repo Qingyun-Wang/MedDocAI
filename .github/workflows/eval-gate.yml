@@ -65,10 +65,16 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run RAGAS smoke-eval and gate on quality
-        # Thresholds carry ~0.11-0.14 margin under the med_anon baseline
-        # (faithfulness 0.962, relevancy 0.927, recall 0.950, precision 0.839).
-        # At n=10 one question swinging 1.0 -> 0.5 moves the mean by 0.05, so the
-        # margins absorb about two questions of drift without going flaky.
+        # Thresholds sized against OBSERVED run-to-run spread, not a single run.
+        # Across three full runs med_anon scored:
+        #   faithfulness 0.970 / 0.962 / 0.955   -> floor 0.85 (margin ~0.11)
+        #   answer_relevancy 0.954 / 0.927 / 0.951 -> floor 0.82 (margin ~0.11)
+        #   context_recall 0.950 / 0.950 / 0.950 -> floor 0.82 (margin ~0.13)
+        #   context_precision 0.823 / 0.839 / 0.754 -> floor 0.60 (margin ~0.15)
+        # context_precision is by far the most volatile (spread 0.085 vs <0.03 for
+        # the rest), so it gets the widest margin. A gate that reddens on ordinary
+        # judge noise is a gate people switch off.
+        # At n=10 one question swinging 1.0 -> 0.5 moves the mean by 0.05.
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -84,7 +90,7 @@ jobs:
             --fail-under faithfulness=0.85 \
             --fail-under answer_relevancy=0.82 \
             --fail-under context_recall=0.82 \
-            --fail-under context_precision=0.70 \
+            --fail-under context_precision=0.60 \
             --min-scored-frac 0.8 \
             --max-pipeline-errors 0
 

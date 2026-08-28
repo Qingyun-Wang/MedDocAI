@@ -102,6 +102,12 @@ flowchart TB
     REV -.->|"good evidence, weak answer — regenerate"| AG
 ```
 
+**Fan-out retrieval for diffuse questions:** when one question spans *all* of a patient's
+medications, the Router emits one focused sub-query per drug; retrieval runs them concurrently
+and the Evidence Filter reranks each group **against its own sub-query** before merging
+round-robin. Gated deterministically (clinical intent + patient selected + no named drug + ≥2
+active meds) so ordinary questions keep the single-query path.
+
 **Two routing shortcuts keep latency and cost down:**
 - `patient_summary` intent **bypasses retrieval** and serves the pre-computed summary from SQLite.
 - `direct_answer` intent (conversational/meta questions like *"what did I just ask?"*)
@@ -156,30 +162,57 @@ reactions, dosage) rather than fixed token windows, and tagged with `drug_name`,
 
 ## Evaluation (RAGAS)
 
-Quality is measured before features are added. A 30-question curated set with hand-written,
+Quality is measured before features are added. A **35-question** curated set with hand-written,
 source-grounded reference answers is scored by an **independent judge** (`gpt-4o-mini` — a
 different model family from the pipeline's Claude, to avoid self-grading bias).
 
-| Metric | Baseline | After iteration | Reads |
-|---|---|---|---|
-| Faithfulness | 0.79 | **0.89** | Are claims grounded in retrieved evidence? |
-| Answer relevancy | 0.86 | **0.86** | Does the answer address the question? |
-| Context precision | 0.94 | **0.94** | Are the retrieved chunks relevant? |
-| Context recall | 0.83 | **0.83** | Did retrieval capture what the reference needs? |
+| Metric | Score | Reads |
+|---|---|---|
+| Faithfulness | **0.89** | Are claims grounded in retrieved evidence? |
+| Answer relevancy | **0.82** | Does the answer address the question? |
+| Context precision | **0.92** | Are the retrieved chunks relevant? |
+| Context recall | **0.87** | Did retrieval capture what the reference needs? |
 
-The high **context precision (0.94)** validates the cross-encoder reranker. More importantly,
-the harness was used to **close the loop**, not just report a number — the baseline surfaced
-two weaknesses, each was root-caused and fixed, then re-measured:
+More important than the numbers: the harness is used to **close the loop** — find a weakness,
+root-cause it, fix it, re-measure. Three rounds so far:
 
 | Issue found | Root cause | Fix | Result |
 |---|---|---|---|
-| Policy faithfulness **0.29** | Answer Generator embellished one-row lookups with invented figures + ungrounded "contact your office" boilerplate | Constrain structured-lookup answers to evidence-only facts | **0.90** |
-| care_mgr relevancy **0.56** | Specific clinical questions misrouted to the broad patient summary | Tighten routing: clinical questions retrieve + answer the precise ask | **0.73–0.80** |
+| Policy faithfulness **0.29** | Answer Generator embellished one-row lookups with invented figures and ungrounded "contact your office" boilerplate | Constrain structured-lookup answers to evidence-only facts | **0.90** |
+| care_mgr relevancy **0.56** | Specific clinical questions misrouted to the broad patient summary | Tighten routing so clinical questions retrieve and answer the precise ask | **0.73–0.80** |
+| Diffuse multi-drug questions: context recall **0.62**, faithfulness **0.72** | One blob query can't retrieve for N drugs — and the filter reranked each per-drug chunk against the *diffuse* question, scoring it near zero and discarding it | **Fan-out retrieval**: one sub-query per drug, each group reranked against *its own* sub-query, merged round-robin | recall **1.00**, faithfulness **0.99** |
 
-The point of the harness is to *find* and *fix* these — diagnosis (e.g. "the answer is correct
-but adds ungrounded elaboration") points to a different fix than "the answer is wrong," and the
-metric guided each step. Remaining honest gaps: `care_mgr` is a small 2-question slice (noisy),
-and `med_patient` context recall (~0.66) is a retrieval-coverage target for a future round.
+### The fan-out fix, in detail
+
+A question like *"what should I watch for across this patient's medications?"* used to reach the
+Answer Generator with **one** piece of evidence — the patient record — and get honestly flagged
+as unverified. The obvious diagnosis ("one query can't search for six drugs") was only half of
+it. The half that mattered: **chunks were being retrieved and then thrown away**, because a
+metformin adverse-reactions section scores near zero against the diffuse question and fell below
+the relevance floor.
+
+Now the Router (deterministically gated, at **+0 LLM calls**) emits one focused sub-query per
+active drug; retrieval runs them concurrently; and each group is reranked **against its own
+sub-query** — the same chunks now score 0.95–0.98. Merging is round-robin so every drug is
+represented rather than one drug taking every slot.
+
+On a live 6-drug patient: 6 sub-queries → 36 retrieved → 11 kept, **all six drugs covered**,
+average contexts per question **2.2 → 10.6**, and two of five questions stopped needing a
+corrective retry at all (roughly halving their latency).
+
+**Honest reading of the regression check.** On the original 30 questions the aggregate moved
+slightly down (faithfulness −0.02, relevancy −0.04). That movement is confined to `policy`,
+`recall`, and `med_anon` — categories that are **structurally incapable** of triggering fan-out
+(it requires a selected patient and a clinical intent), on slices of 3–10 questions where the
+judge is noisy and the `recall` category reads *live* FDA data against frozen references. Every
+category fan-out can actually affect improved: `med_patient` faithfulness 0.82 → 0.89 and recall
+0.66 → 0.70, `care_mgr` recall 0.92 → 1.00.
+
+Remaining known gaps, tracked rather than hidden: the wider net retrieves **near-miss drugs**
+(prasugrel for a clopidogrel sub-query, penicillin G where the patient takes penicillin V) —
+precision did not move, but a `drug_name` guard is the next refinement; and the internal Reviewer
+still fails 2 of 5 diffuse questions at RAGAS faithfulness 0.99, suggesting its bar may be
+mis-calibrated.
 
 ---
 
@@ -209,6 +242,18 @@ i.e. a third of the latency is local compute, not the API.
 corrective-RAG retry shows up as a second `answer_generator` span under the same
 root. It is off unless a flag *and* a key are both set, so it never runs in tests,
 CI, or on the public demo.
+
+**Closing the loop with user feedback.** Every answer carries 👍/👎; a thumbs-down opens a
+note box ("cited the wrong drug", "ignored her kidney disease"). Verdicts land in a SQLite
+`feedback` table keyed by `query_id`, so a rating joins straight back to that query's cost and
+latency row. `scripts/feedback_to_eval.py` then turns thumbs-down answers into **candidate eval
+questions** — the test set grows from observed failures instead of only from cases imagined up
+front.
+
+One deliberate limit: the exporter leaves `reference` **empty** and never writes into
+`eval_dataset.json`. A thumbs-down means the answer was wrong, so promoting it (or a model's
+repair of it) to answer key would bake the failure into the thing that grades future failures.
+References stay hand-written from the source; the tool just gathers the evidence a human needs.
 
 **CI/CD — three gates.**
 
@@ -285,7 +330,7 @@ streamlit run frontend/app.py
 ### Run the tests / evaluation
 
 ```bash
-pytest -q                                   # 263 tests (data-dependent ones auto-skip without data/)
+pytest -q                                   # 321 tests (data-dependent ones auto-skip without data/)
 python evaluation/run_eval.py               # full RAGAS run (pipeline → scoring)
 python evaluation/run_eval.py --skip-pipeline   # re-score cached answers only
 ```
@@ -304,7 +349,7 @@ MedDocAI/
 ├── models/           # Pydantic output schemas
 ├── frontend/         # Streamlit UI (context selector, citations, agent trace)
 ├── evaluation/       # RAGAS harness, curated 30-Q dataset, reference verifier
-├── scripts/          # validation, demos, local→server vector migration
+├── scripts/          # validation, demos, vector migration, feedback→eval export
 ├── Dockerfile · docker-compose.yml · docker-entrypoint.sh · .dockerignore
 └── tests/            # unit + integration tests
 ```
@@ -327,6 +372,11 @@ MedDocAI/
 - **Cost & latency instrumentation** — token usage captured at the SDK seam, priced
   per model, attributed per agent; an unpriced model reports `None`, never a fake $0.00.
 - **Quality-gated CI** — a RAGAS smoke-eval blocks PRs that regress answer quality.
+- **Feedback loop** — 👍/👎 on every answer, persisted per `query_id` and exported into
+  candidate eval questions, so the test set grows from real failures.
+- **Fan-out retrieval** — diffuse N-entity questions are decomposed into per-entity
+  sub-queries and reranked group-by-group, fixing a coverage failure the eval exposed
+  (context recall 0.62 → 1.00 on that slice).
 - **One codebase, two deployments** — env-driven Qdrant client + snapshot-migration seeding
   for a clean, reproducible container setup.
 

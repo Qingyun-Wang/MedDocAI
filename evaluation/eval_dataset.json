@@ -1,12 +1,13 @@
 {
   "version": "1.0",
-  "description": "MedDocAI RAGAS evaluation set - 30 curated questions across intents. References are grounded in FDA label content, CMS eligibility data (as loaded in SQLite), live openFDA recall/shortage data (as of 2026-06), and the 10 demo patients' FHIR records.",
+  "description": "MedDocAI RAGAS evaluation set - 35 curated questions across intents. References are grounded in FDA label content, CMS eligibility data (as loaded in SQLite), live openFDA recall/shortage data (as of 2026-06), and the 10 demo patients' FHIR records.",
   "categories": {
     "med_anon": "Medication question, anonymous (10)",
     "med_patient": "Medication question with patient context (10)",
     "policy": "Medicaid policy / eligibility / pricing (5)",
     "recall": "Drug recall / shortage, live API (3)",
-    "care_mgr": "Care-manager clinical question with patient context (2)"
+    "care_mgr": "Care-manager clinical question with patient context (2)",
+    "diffuse": "Diffuse multi-entity question: one broad ask spanning ALL of a patient's active medications (R9 fan-out retrieval target) (5)"
   },
   "questions": [
     {
@@ -248,6 +249,46 @@
       "user_role": "care_manager",
       "patient": "Cali421",
       "reference": "For this 90-year-old with diabetes and coronary disease on six active medications: prioritize renal function monitoring for metformin (age 65+ and declining kidney function are lactic acidosis risk factors; eGFR determines whether metformin remains safe), glycemic monitoring given his HbA1c of 8.8% indicating poor control, bleeding surveillance on clopidogrel, blood pressure monitoring across his three BP-active drugs (amlodipine, captopril, nitroglycerin) with fall risk at his age, and potassium/renal checks for captopril. His severe dyslipidemia (LDL 163, HDL 33, TG 239) is untreated - no statin is on his list."
+    },
+    {
+      "id": "diffuse_01",
+      "category": "diffuse",
+      "question": "What side effects or symptoms should I watch for across this patient's medications?",
+      "user_role": "care_manager",
+      "patient": "Cali421",
+      "reference": "This 90-year-old man takes six active medications, each with distinct warning signs. Metformin carries a boxed warning for lactic acidosis - unusual fatigue, muscle pain, trouble breathing - and commonly causes gastrointestinal upset. Clopidogrel increases bleeding risk, so watch for unusual bruising, blood in urine or stool, and bleeding that will not stop. Amlodipine most commonly causes peripheral edema (ankle and foot swelling), and can cause symptomatic hypotension. Captopril, an ACE inhibitor, can cause a persistent dry cough, angioedema (facial, tongue or throat swelling, which is an emergency), hyperkalemia and declining renal function. Nitroglycerin commonly causes headache and can cause severe hypotension, with tolerance developing on excessive use. Penicillin V can cause allergic reactions and diarrhea. Because amlodipine, captopril and nitroglycerin all lower blood pressure, additive hypotension, dizziness and fall risk are a particular concern at age 90."
+    },
+    {
+      "id": "diffuse_02",
+      "category": "diffuse",
+      "question": "What are the most important safety concerns across all of this patient's medications?",
+      "user_role": "care_manager",
+      "patient": "Arlie395",
+      "reference": "This 101-year-old man is on eight medication entries. Simvastatin carries a risk of myopathy and rhabdomyolysis, and the label names age 65 or older, renal impairment and interacting drugs as risk factors - all relevant here - so unexplained muscle pain or weakness should be reported promptly. Clopidogrel increases bleeding risk and has a boxed warning that CYP2C19 poor metabolizers get reduced antiplatelet effect. Amlodipine commonly causes peripheral edema and can cause symptomatic hypotension. Nitroglycerin can cause severe hypotension and headache, and excessive use leads to tolerance. Donepezil commonly causes nausea, diarrhea, insomnia, vomiting, muscle cramps, fatigue and anorexia, and as a cholinesterase inhibitor it can have vagotonic effects on the sinoatrial node, meaning bradycardia. Penicillin V can cause hypersensitivity reactions. Two notable record-level flags: donepezil appears twice (10 mg and 23 mg) and penicillin twice (250 mg and 500 mg), which should be reconciled as possible duplicate therapy, and the combination of amlodipine and nitroglycerin creates additive hypotension and fall risk at his age."
+    },
+    {
+      "id": "diffuse_03",
+      "category": "diffuse",
+      "question": "What should this patient watch for with her current medications?",
+      "user_role": "patient",
+      "patient": "Leopold359",
+      "reference": "This 63-year-old woman with diabetes takes four medications, three of which carry boxed warnings. Hydrocodone-acetaminophen has boxed warnings for addiction, abuse and misuse, life-threatening respiratory depression, accidental ingestion, and interaction with benzodiazepines; the acetaminophen component risks severe liver injury above 4 grams per day, so she should watch total acetaminophen from all sources, and expect constipation and sedation. Liraglutide has a boxed warning for thyroid C-cell tumors - a neck lump, trouble swallowing or persistent hoarseness should be reported - and can cause acute pancreatitis, so severe persistent abdominal pain means stopping the drug and seeking care. Metformin has a boxed warning for lactic acidosis and commonly causes gastrointestinal side effects, which may compound liraglutide's own nausea. Penicillin V can cause allergic reactions and diarrhea. Her HbA1c of 9.1% and triglycerides of 561 mg/dL indicate her diabetes remains poorly controlled."
+    },
+    {
+      "id": "diffuse_04",
+      "category": "diffuse",
+      "question": "What side effects should we monitor across this member's medications?",
+      "user_role": "care_manager",
+      "patient": "Jude119",
+      "reference": "This 76-year-old man with asthma, hypertension, gout and a prior stroke takes six medication entries. Albuterol can cause life-threatening paradoxical bronchospasm, which requires immediate discontinuation, and needing more albuterol than usual signals deteriorating asthma that requires reassessment; it also causes cardiovascular effects such as increased heart rate and blood pressure, which matter given his hypertension and stroke history. Clopidogrel increases bleeding risk and carries a boxed warning about reduced effectiveness in CYP2C19 poor metabolizers. Inhaled fluticasone is a controller corticosteroid whose local effects include oral candidiasis and hoarseness, mitigated by rinsing the mouth after use. Chlorpheniramine is a sedating antihistamine whose label advises asking a doctor before use with a breathing problem, glaucoma, or urinary difficulty from prostate enlargement - his asthma makes that directly relevant, and sedation adds fall risk. Penicillin V appears at two strengths and can cause allergic reactions and diarrhea."
+    },
+    {
+      "id": "diffuse_05",
+      "category": "diffuse",
+      "question": "Are there any overlapping risks or interactions among this patient's medications?",
+      "user_role": "care_manager",
+      "patient": "Cali421",
+      "reference": "Yes. Three of this 90-year-old man's medications lower blood pressure - amlodipine, captopril and nitroglycerin - creating additive hypotension with dizziness and fall risk, so blood pressure should be monitored and he should be seated when using the nitroglycerin spray. Nitroglycerin is absolutely contraindicated with PDE-5 inhibitors such as sildenafil because of severe hypotension. Clopidogrel increases bleeding risk, which compounds the bleeding consequences of any fall. Captopril can cause hyperkalemia and declining renal function, and worsening renal function also raises metformin's lactic acidosis risk, since metformin is contraindicated below an eGFR of 30 - so renal function is the shared monitoring parameter linking captopril and metformin. His HbA1c of 8.8% shows diabetes is not well controlled, and his untreated dyslipidemia (LDL 163, HDL 33, triglycerides 239) adds cardiovascular risk on top of his coronary heart disease and prior myocardial infarction."
     }
   ]
 }

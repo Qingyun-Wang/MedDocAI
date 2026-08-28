@@ -85,8 +85,22 @@ def _load_history(patient_id: str, persona: str) -> list[dict]:
                 "evidence": blob.get("evidence", []),
                 "trace": blob.get("trace", []),
                 "metrics": blob.get("metrics", {}),
+                # query_id lets a rating survive a page reload (and links the
+                # feedback row back to its query_metrics row).
+                "query_id": blob.get("query_id"),
+                "question": blob.get("question", ""),
+                "intent": blob.get("intent", ""),
             })
     return messages
+
+
+def _hydrate_feedback(messages: list[dict]) -> None:
+    """Load any ratings already stored for these messages into session state."""
+    ids = [m["query_id"] for m in messages if m.get("query_id")]
+    if not ids:
+        return
+    for row in _get_db().get_feedback(query_ids=ids):
+        st.session_state.feedback[row["query_id"]] = row["rating"]
 
 
 def _save_user_message(patient_id: str, persona: str, content: str) -> None:
@@ -107,6 +121,9 @@ def _save_assistant_message(patient_id: str, persona: str, msg: dict) -> None:
             "disclaimers": msg.get("disclaimers", []),
             "trace": msg.get("trace", []),
             "metrics": msg.get("metrics", {}),
+            "query_id": msg.get("query_id"),
+            "question": msg.get("question", ""),
+            "intent": msg.get("intent", ""),
         },
     )
 
@@ -176,6 +193,16 @@ def render_sidebar() -> tuple[str, dict | None]:
     st.session_state.show_sources = st.sidebar.checkbox("Show sources by default", value=False)
     st.session_state.show_trace = st.sidebar.checkbox("Show agent trace by default", value=False)
 
+    # Feedback tally — makes the improvement loop visible, and thumbs-down answers
+    # are exported into eval candidates by scripts/feedback_to_eval.py.
+    try:
+        counts = _get_db().feedback_counts()
+        if counts["up"] or counts["down"]:
+            st.sidebar.caption(
+                f"📊 Feedback: 👍 {counts['up']} · 👎 {counts['down']}")
+    except Exception:
+        pass                       # a stats caption must never break the sidebar
+
     return role, patient_context
 
 
@@ -210,6 +237,74 @@ def _render_context_panel(ctx: dict) -> None:
 # Rendering an assistant message (answer + expanders)
 # ---------------------------------------------------------------------------
 
+def _record_feedback(msg: dict, rating: str, comment: str = "") -> None:
+    """Persist one thumbs verdict and mirror it into session state."""
+    qid = msg.get("query_id")
+    if not qid:
+        return
+    ctx = st.session_state.get("active_patient_id")
+    try:
+        _get_db().save_feedback(
+            query_id=qid,
+            rating=rating,
+            comment=comment,
+            question=msg.get("question", ""),
+            answer=msg.get("answer", ""),
+            intent=msg.get("intent", ""),
+            user_role=st.session_state.get("active_role", ""),
+            patient_id=ctx,
+            persona=st.session_state.get("active_persona"),
+            session_id=st.session_state.session_id,
+            n_evidence=len(msg.get("evidence", [])),
+        )
+    except Exception as e:                      # never break the chat over feedback
+        st.warning(f"Could not save feedback: {e}")
+        return
+    st.session_state.feedback[qid] = rating
+
+
+def _render_feedback_controls(msg: dict) -> None:
+    """Thumbs up/down under an answer, plus a note box on thumbs-down.
+
+    The note is the highest-value signal in the whole loop: 'wrong drug' or
+    'ignored her kidney disease' is what turns a bad answer into a test case.
+    """
+    qid = msg.get("query_id")
+    if not qid:
+        return                                   # replayed pre-feedback history
+    current = st.session_state.feedback.get(qid)
+
+    up_col, down_col, msg_col = st.columns([1, 1, 8])
+    with up_col:
+        if st.button("👍", key=f"fb_up_{qid}",
+                     type="primary" if current == "up" else "secondary",
+                     help="This answer was helpful"):
+            _record_feedback(msg, "up")
+            st.rerun()
+    with down_col:
+        if st.button("👎", key=f"fb_down_{qid}",
+                     type="primary" if current == "down" else "secondary",
+                     help="Something was wrong with this answer"):
+            _record_feedback(msg, "down")
+            st.rerun()
+    with msg_col:
+        if current == "up":
+            st.caption("Thanks — logged as helpful.")
+        elif current == "down":
+            st.caption("Thanks — logged for review; it becomes an eval candidate.")
+
+    if current == "down":
+        with st.expander("What was wrong? (optional — this becomes the test case)"):
+            note = st.text_area(
+                "Note", key=f"fb_note_{qid}", label_visibility="collapsed",
+                placeholder="e.g. missed her kidney disease / cited the wrong drug / "
+                            "answered a different question",
+            )
+            if st.button("Save note", key=f"fb_save_{qid}"):
+                _record_feedback(msg, "down", comment=note)
+                st.success("Saved.")
+
+
 def _render_assistant(msg: dict) -> None:
     st.markdown(msg["answer"])
 
@@ -241,6 +336,8 @@ def _render_assistant(msg: dict) -> None:
             for step in trace:
                 st.text(step)
 
+    _render_feedback_controls(msg)
+
 
 # ---------------------------------------------------------------------------
 # Main
@@ -261,10 +358,18 @@ def main():
         st.session_state.messages = []
     if "loaded_key" not in st.session_state:
         st.session_state.loaded_key = None
+    if "feedback" not in st.session_state:
+        st.session_state.feedback = {}          # {query_id: 'up'|'down'}
 
     role, patient_context = render_sidebar()
     patient_id = patient_context["patient_id"] if patient_context else None
     persona = role if role in ("patient", "care_manager") else None
+
+    # Stashed so the feedback writer can label rows without threading args through
+    # every render call.
+    st.session_state.active_patient_id = patient_id
+    st.session_state.active_persona = persona
+    st.session_state.active_role = role
 
     # Load persisted history when the selected (patient, persona) changes.
     # Anonymous (no patient) gets a fresh, non-persisted, session-only chat.
@@ -272,6 +377,7 @@ def main():
     if current_key != st.session_state.loaded_key:
         if patient_id:
             st.session_state.messages = _load_history(patient_id, persona)
+            _hydrate_feedback(st.session_state.messages)
         else:
             st.session_state.messages = []
         st.session_state.loaded_key = current_key
@@ -333,6 +439,11 @@ def main():
                 "evidence": evidence,
                 "trace": final.get("trace", []),
                 "metrics": final.get("metrics", {}),
+                # Carried so a thumbs verdict can be attributed and, later,
+                # rebuilt into an eval question without a chat_history join.
+                "query_id": final.get("query_id"),
+                "question": prompt,
+                "intent": final.get("intent", ""),
             }
             _render_assistant(assistant_msg)
             st.session_state.messages.append(assistant_msg)

@@ -48,6 +48,52 @@ INTENT_RETRY_EXTRA_TOOLS: dict[str, list[str]] = {
     "general":             ["fetch_drug_label", "check_drug_recalls", "search_medlineplus_live"],
 }
 
+# --- R9 fan-out retrieval -------------------------------------------------
+# A diffuse question ("what should I watch for across this patient's meds?") is
+# ONE ask spanning N drugs. A single blob query retrieves badly for all N, and the
+# Evidence Filter then reranks those chunks against the diffuse question, scoring
+# each per-drug section low and dropping it. Fan-out splits the ask into one
+# focused query per drug so each is retrieved AND reranked on its own terms.
+MAX_SUB_QUERIES = 6          # bounds latency/cost for patients on many drugs
+MIN_MEDS_FOR_FANOUT = 2      # 1 drug is not "diffuse" — the normal path handles it
+FANOUT_INTENTS = {"medication_info", "condition_education"}
+
+
+def _active_meds(ctx: dict | None) -> list[str]:
+    """Display names of the patient's ACTIVE medications."""
+    if not ctx:
+        return []
+    meds = ctx.get("medications_json") or ctx.get("medications") or []
+    return [m.get("display", "") for m in meds
+            if m.get("status") == "active" and m.get("display")]
+
+
+def should_fan_out(state: PipelineState, intent: str, drug_name: str | None) -> bool:
+    """Deterministic gate: is this a diffuse multi-entity patient question?
+
+    Kept in code, not left to the LLM, so the feature fires predictably and cannot
+    be triggered on an ordinary single-drug question by a chatty model.
+    """
+    if intent not in FANOUT_INTENTS:
+        return False
+    if drug_name:                      # a specific drug was named -> not diffuse
+        return False
+    return len(_active_meds(state.get("patient_context"))) >= MIN_MEDS_FOR_FANOUT
+
+
+def _fallback_sub_queries(state: PipelineState) -> list[str]:
+    """Deterministic sub-queries, used when the gate fires but the LLM returned none.
+
+    Guarantees fan-out actually happens rather than silently degrading to the old
+    single-query behaviour.
+    """
+    base = state.get("query", "")
+    kind = "side effects adverse reactions warnings monitoring"
+    if any(w in base.lower() for w in ("interact", "together", "combination", "overlap")):
+        kind = "interactions contraindications warnings"
+    return [f"{med} {kind}" for med in _active_meds(state.get("patient_context"))]
+
+
 _SYSTEM = """You are the Router for a healthcare document intelligence assistant.
 Your job is to classify a user's query and prepare it for retrieval.
 
@@ -88,6 +134,13 @@ Rules:
 - If a RECENT CONVERSATION is shown, use it to resolve pronouns/references in the
   current query (e.g., "what about its side effects?" after discussing metformin means
   the shaped_query should be about metformin's side effects, and drug_name = metformin).
+- SUB-QUERIES (fan-out): if the question is a BROAD ask spanning ALL of a patient's
+  medications (e.g. "what side effects should I watch for across their meds?", "any
+  overlapping risks?", "what should we monitor?") rather than about one named drug,
+  populate 'sub_queries' with ONE focused retrieval query per active medication, e.g.
+  ["metformin adverse reactions lactic acidosis", "clopidogrel bleeding risk", ...].
+  Each must name its drug and the aspect asked about. Leave 'sub_queries' EMPTY for
+  ordinary questions about a single drug or topic.
 - IF this is a RETRY and previous queries are shown: the earlier search did NOT find
   adequate evidence. Produce a MEANINGFULLY DIFFERENT shaped_query — do not repeat a
   previous one. Broaden it, use clinical synonyms, rephrase, or target different
@@ -114,6 +167,13 @@ _INPUT_SCHEMA = {
         "state_name": {
             "type": ["string", "null"],
             "description": "US state name from the query, or null",
+        },
+        "sub_queries": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "For a broad question spanning ALL of a patient's "
+                           "medications: one focused retrieval query per drug. "
+                           "Empty list for ordinary single-topic questions.",
         },
         "reasoning": {
             "type": "string",
@@ -192,6 +252,8 @@ def router_node(state: PipelineState) -> dict:
         shaped_query=decision_raw.get("shaped_query", state["query"]),
         drug_name=decision_raw.get("drug_name"),
         state_name=decision_raw.get("state_name"),
+        sub_queries=[q for q in (decision_raw.get("sub_queries") or [])
+                     if isinstance(q, str) and q.strip()],
         reasoning=decision_raw.get("reasoning", ""),
     )
 
@@ -206,6 +268,15 @@ def router_node(state: PipelineState) -> dict:
         # Union, preserving order and de-duplicating
         tools = list(dict.fromkeys(tools + extra))
 
+    # R9 fan-out. The GATE is deterministic (code), the PHRASING is the LLM's: the
+    # model cannot switch fan-out on for an ordinary question, and a model that
+    # forgets to emit sub_queries cannot silently switch it off either — we
+    # synthesise them from the active med list instead.
+    sub_queries: list[str] = []
+    if should_fan_out(state, intent, decision.drug_name):
+        sub_queries = decision.sub_queries or _fallback_sub_queries(state)
+        sub_queries = list(dict.fromkeys(sub_queries))[:MAX_SUB_QUERIES]
+
     # Track every shaped query so future retries can avoid repeating them
     attempted = state.get("attempted_queries", [])
     attempted = attempted + [decision.shaped_query]
@@ -214,6 +285,7 @@ def router_node(state: PipelineState) -> dict:
     trace = trace + [
         f"Router: intent={intent}, drug={decision.drug_name}, "
         f"state={decision.state_name}, tools={tools}"
+        + (f", FAN-OUT x{len(sub_queries)}" if sub_queries else "")
         + (f" [RETRY: broadened tools, query diversified]" if is_retry else "")
     ]
 
@@ -224,6 +296,7 @@ def router_node(state: PipelineState) -> dict:
         "drug_name": decision.drug_name,
         "state_name": decision.state_name,
         "tools_to_call": tools,
+        "sub_queries": sub_queries,
         "trace": trace,
         # Clear any prior route-back signal now that we've re-routed
         "route_back_to": None,

@@ -55,6 +55,11 @@ class RouterDecision(BaseModel):
     state_name: Optional[str] = Field(
         None, description="US state name extracted from the query, if any"
     )
+    sub_queries: list[str] = Field(
+        default_factory=list,
+        description="R9 fan-out: focused sub-queries (one per entity) for a diffuse "
+                    "multi-entity question. Empty for ordinary single-topic queries.",
+    )
     reasoning: str = Field(description="Brief explanation of the routing decision")
 
 
@@ -95,6 +100,7 @@ class PipelineState(TypedDict, total=False):
     state_name: Optional[str]
     tools_to_call: list[str]
     attempted_queries: list[str]      # every shaped_query tried (for retry diversification)
+    sub_queries: list[str]            # R9 fan-out: one focused query per entity (may be empty)
 
     # --- Retrieval outputs ---
     raw_evidence: list[Evidence]
@@ -172,6 +178,7 @@ def new_state(
         state_name=None,
         tools_to_call=[],
         attempted_queries=[],
+        sub_queries=[],
         raw_evidence=[],
         filtered_evidence=[],
         answer="",

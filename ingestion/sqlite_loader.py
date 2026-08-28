@@ -150,6 +150,7 @@ class MedDocDB:
     def __init__(self, db_path: str = DEFAULT_DB_PATH):
         self.db_path = db_path
         self._metrics_ready = False   # lazily ensured by save_query_metrics
+        self._feedback_ready = False  # lazily ensured by save_feedback
 
     # ── Connection management ──────────────────────────────────────────────
 
@@ -461,6 +462,116 @@ class MedDocDB:
     # ── Chat history ───────────────────────────────────────────────────────
 
     # ── Observability ──────────────────────────────────────────────────────
+
+    # -----------------------------------------------------------------
+    # User feedback (thumbs up/down on an answer)
+    # -----------------------------------------------------------------
+
+    _FEEDBACK_DDL = """
+    CREATE TABLE IF NOT EXISTS feedback (
+        query_id      TEXT PRIMARY KEY,   -- one verdict per answer; re-rating replaces it
+        session_id    TEXT,
+        created_at    TEXT NOT NULL,
+        rating        TEXT NOT NULL,      -- 'up' | 'down'
+        comment       TEXT,               -- optional free text (the gold signal on a 'down')
+        question      TEXT,               -- denormalised on purpose (see save_feedback)
+        answer        TEXT,
+        intent        TEXT,
+        user_role     TEXT,
+        patient_id    TEXT,
+        persona       TEXT,
+        review_passed INTEGER,
+        n_evidence    INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS idx_feedback_rating  ON feedback(rating);
+    CREATE INDEX IF NOT EXISTS idx_feedback_created ON feedback(created_at);
+    """
+
+    def save_feedback(
+        self,
+        query_id: str,
+        rating: str,
+        question: str = "",
+        answer: str = "",
+        comment: str = "",
+        intent: str = "",
+        user_role: str = "",
+        patient_id: Optional[str] = None,
+        persona: Optional[str] = None,
+        session_id: Optional[str] = None,
+        review_passed: bool = False,
+        n_evidence: int = 0,
+    ) -> None:
+        """Record (or replace) the user's verdict on one answer.
+
+        `question` and `answer` are stored HERE rather than joined from
+        chat_history, because chat_history is only written when a patient is
+        selected — every anonymous query, i.e. most demo traffic, would otherwise
+        produce feedback rows with nothing to review. The whole point is to turn a
+        thumbs-down into an eval question, which needs the question text.
+
+        Self-ensures its DDL for the same reason as save_query_metrics: nothing
+        calls create_tables() at startup and the deployed Space DB predates this table.
+        """
+        if rating not in ("up", "down"):
+            raise ValueError(f"rating must be 'up' or 'down', got {rating!r}")
+
+        with self._conn() as conn:
+            if not self._feedback_ready:
+                conn.executescript(self._FEEDBACK_DDL)
+                self._feedback_ready = True
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO feedback
+                    (query_id, session_id, created_at, rating, comment, question,
+                     answer, intent, user_role, patient_id, persona,
+                     review_passed, n_evidence)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (query_id, session_id, datetime.utcnow().isoformat(), rating,
+                 comment, question, answer, intent, user_role, patient_id,
+                 persona, 1 if review_passed else 0, n_evidence),
+            )
+
+    def get_feedback(
+        self,
+        rating: Optional[str] = None,
+        query_ids: Optional[list[str]] = None,
+        limit: int = 500,
+    ) -> list[dict]:
+        """Read feedback rows, newest first. Returns [] if the table doesn't exist yet."""
+        sql = "SELECT * FROM feedback"
+        where, params = [], []
+        if rating:
+            where.append("rating = ?")
+            params.append(rating)
+        if query_ids:
+            where.append(f"query_id IN ({','.join('?' * len(query_ids))})")
+            params.extend(query_ids)
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY created_at DESC LIMIT ?"
+        params.append(limit)
+
+        with self._conn() as conn:
+            try:
+                rows = conn.execute(sql, params).fetchall()
+            except sqlite3.OperationalError:
+                return []            # no feedback recorded yet
+            return [dict(r) for r in rows]
+
+    def feedback_counts(self) -> dict:
+        """{'up': n, 'down': n} — cheap enough to show in the UI."""
+        with self._conn() as conn:
+            try:
+                rows = conn.execute(
+                    "SELECT rating, COUNT(*) c FROM feedback GROUP BY rating").fetchall()
+            except sqlite3.OperationalError:
+                return {"up": 0, "down": 0}
+        out = {"up": 0, "down": 0}
+        for r in rows:
+            out[r["rating"]] = r["c"]
+        return out
 
     _QUERY_METRICS_DDL = """
     CREATE TABLE IF NOT EXISTS query_metrics (
