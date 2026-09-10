@@ -32,10 +32,15 @@ jobs:
     name: RAGAS smoke-eval (med_anon)
     runs-on: ubuntu-latest
     # 25 was too tight and cost a whole run: the FIRST real firing of this gate
-    # timed out mid-scoring. Phase A (10 questions) alone took ~20 min on a 2-core
-    # runner — the local median of ~31s/query does not transfer, because the runner
-    # reranks on CPU and reaches Qdrant Cloud over the network instead of a local
-    # embedded store. Phase B (4 RAGAS metrics x 10 Q via gpt-4o-mini) follows.
+    # timed out before it could render a verdict. MEASURED breakdown of a full
+    # green run (34494312789), once PYTHONUNBUFFERED made the phases visible:
+    #   Phase A — 10 pipeline queries:   227s  (12%)  17.7-32.8s each, all iter=1
+    #   Phase B — RAGAS scoring:        1614s  (88%)
+    #   total 33.5 min
+    # So the pipeline is NOT the bottleneck — judging it is. 45 min leaves ~11 min
+    # of headroom. If this needs to get faster, raise the RAGAS judge concurrency
+    # (evaluation/run_eval.py CONCURRENCY); extending the timeout again would only
+    # be treating the symptom.
     timeout-minutes: 45
     # Skip drafts, and skip fork PRs — a fork must never reach repo secrets.
     if: >
