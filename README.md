@@ -255,6 +255,20 @@ One deliberate limit: the exporter leaves `reference` **empty** and never writes
 repair of it) to answer key would bake the failure into the thing that grades future failures.
 References stay hand-written from the source; the tool just gathers the evidence a human needs.
 
+**An HTTP service layer.** The pipeline is also exposed as a FastAPI service, so the
+Streamlit UI is one client rather than the only way in:
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /query` | ask a question; returns the answer, citations, evidence, routing, and per-query cost |
+| `GET /patients`, `/patients/{id}` | the demo roster and one patient's clinical detail |
+| `POST /feedback`, `GET /feedback/stats` | submit and aggregate 👍/👎 |
+| `GET /health` | dependency-aware readiness (reports `degraded`, not a 500) |
+
+Interactive OpenAPI docs at `/docs`. Every endpoint **delegates to the same
+`answer_query` the UI calls** — it is an adapter, not a second implementation, so the API
+cannot drift from what the UI runs (and cannot bypass the instrumentation).
+
 **CI/CD — three gates.**
 
 | Workflow | Trigger | Gate |
@@ -268,6 +282,25 @@ fails the build rather than passing on the average of the survivors — a run wh
 8 of 10 questions error out must not look like a 1.0.
 
 ---
+
+### Latency, measured then addressed
+
+`query_metrics` over 51 real queries: median **30.8s**, p90 73.6s. The breakdown
+made the fix obvious — and ruled out the obvious fix:
+
+| node | median | share |
+|---|---:|---:|
+| answer_generator | 18.2s | 59% |
+| router | 6.0s | 19% |
+| reviewer | 2.4s | 8% |
+| retrieval | 1.5s | 5% |
+
+Answer generation is the model emitting tokens — irreducibly sequential. Streaming
+it to the screen is unsafe here: the Reviewer sends the answer back for a rewrite
+on **29%** of queries, so the user would watch an answer appear and then be
+replaced. Instead the UI narrates each agent as it completes, which puts **first
+feedback at 3.4s instead of 33.5s** of blank spinner — and makes the corrective-RAG
+retry visible rather than hidden. Real latency is unchanged; the wait is legible.
 
 ## Tech stack
 
@@ -318,6 +351,16 @@ docker compose down -v     # stop and wipe the Qdrant volume (forces a fresh re-
 > factory connects to an **embedded** store locally (no server needed) or a **server** when
 > `QDRANT_URL` is set (Docker sets `http://qdrant:6333`). Zero call-site branching.
 
+### Run the HTTP API
+
+```bash
+uvicorn api.main:app --reload --port 8000
+# then open http://localhost:8000/docs
+curl -X POST http://localhost:8000/query      -H "Content-Type: application/json"      -d '{"question":"What are the main warnings for warfarin?"}'
+```
+
+Or as a container alongside the UI: `docker compose up api`.
+
 ### Run locally (no Docker)
 
 ```bash
@@ -330,7 +373,7 @@ streamlit run frontend/app.py
 ### Run the tests / evaluation
 
 ```bash
-pytest -q                                   # 321 tests (data-dependent ones auto-skip without data/)
+pytest -q                                   # 361 tests (data-dependent ones auto-skip without data/)
 python evaluation/run_eval.py               # full RAGAS run (pipeline → scoring)
 python evaluation/run_eval.py --skip-pipeline   # re-score cached answers only
 ```
@@ -348,6 +391,7 @@ MedDocAI/
 ├── vector_store/     # get_qdrant_client() factory (embedded | server by env)
 ├── models/           # Pydantic output schemas
 ├── frontend/         # Streamlit UI (context selector, citations, agent trace)
+├── api/              # FastAPI service layer (OpenAPI docs at /docs)
 ├── evaluation/       # RAGAS harness, curated 30-Q dataset, reference verifier
 ├── scripts/          # validation, demos, vector migration, feedback→eval export
 ├── Dockerfile · docker-compose.yml · docker-entrypoint.sh · .dockerignore
@@ -372,6 +416,8 @@ MedDocAI/
 - **Cost & latency instrumentation** — token usage captured at the SDK seam, priced
   per model, attributed per agent; an unpriced model reports `None`, never a fake $0.00.
 - **Quality-gated CI** — a RAGAS smoke-eval blocks PRs that regress answer quality.
+- **Service-oriented** — the pipeline is an HTTP API (FastAPI + OpenAPI); the UI is
+  one client. Both call the same entry point, so neither can drift from the other.
 - **Feedback loop** — 👍/👎 on every answer, persisted per `query_id` and exported into
   candidate eval questions, so the test set grows from real failures.
 - **Fan-out retrieval** — diffuse N-entity questions are decomposed into per-entity

@@ -25,7 +25,7 @@ termination.
 from __future__ import annotations
 
 import logging
-from typing import Literal
+from typing import Callable, Literal
 
 from langgraph.graph import END, StateGraph
 
@@ -214,11 +214,20 @@ def answer_query(
     user_role: str = "anonymous",
     max_iterations: int = 2,
     conversation_history: list[dict] | None = None,
+    on_progress: Callable[[str, dict], None] | None = None,
 ) -> PipelineState:
     """Run the full pipeline for a query. Returns the final PipelineState.
 
     conversation_history: recent prior turns [{role, content}, ...] for follow-up
     resolution and coherent answers.
+
+    on_progress: optional callback invoked as (node_name, node_update) after each
+    node completes, so a caller can show live progress across the ~30s run. It
+    lives HERE rather than in the UI on purpose: this is the single instrumented
+    entry point, and a caller that reached for pipeline.stream() itself would
+    bypass observability and tracing — exactly the bug that was collapsed out of
+    frontend/app.py in Step 5.1. Streaming is used only when a callback is given,
+    so the default path stays byte-identical to before.
     """
     pipeline = get_pipeline()
     initial = new_state(query, patient_context, user_role, max_iterations,
@@ -226,7 +235,25 @@ def answer_query(
     start_query(initial["query_id"])
     try:
         # recursion_limit guards against any unexpected cycling beyond our logic
-        final = pipeline.invoke(initial, config={"recursion_limit": 25})
+        config = {"recursion_limit": 25}
+        if on_progress is None:
+            final = pipeline.invoke(initial, config=config)
+        else:
+            # stream_mode=["updates","values"] yields (mode, chunk): "updates" names
+            # the node that just ran, "values" carries the full state. The last
+            # "values" chunk is exactly what .invoke() would have returned.
+            final = initial
+            for mode, chunk in pipeline.stream(
+                initial, config=config, stream_mode=["updates", "values"]
+            ):
+                if mode == "values":
+                    final = chunk
+                    continue
+                for node, update in (chunk or {}).items():
+                    try:
+                        on_progress(node, update or {})
+                    except Exception:      # a UI callback must never break an answer
+                        logger.debug("on_progress callback failed", exc_info=True)
     finally:
         metrics = finish_query(initial["query_id"])
     final["metrics"] = metrics
