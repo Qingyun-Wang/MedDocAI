@@ -44,5 +44,26 @@ services:
       - ./data:/app/data
     restart: unless-stopped
 
+  # Optional HTTP service layer. Same image, same pipeline — just a different
+  # entrypoint, so the API can never drift from what the UI runs.
+  #   docker compose up api      -> http://localhost:8000/docs
+  api:
+    build: .
+    container_name: meddocai-api
+    depends_on:
+      - qdrant
+    env_file:
+      - .env
+    environment:
+      QDRANT_URL: "http://qdrant:6333"
+      QDRANT_PATH: "data/qdrant_storage"
+      SEED_ON_BOOT: "false"        # the app service already seeds the shared volume
+    entrypoint: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
+
 volumes:
   qdrant_data:
