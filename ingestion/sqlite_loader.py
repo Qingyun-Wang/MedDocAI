@@ -533,6 +533,22 @@ class MedDocDB:
                  persona, 1 if review_passed else 0, n_evidence),
             )
 
+    def get_query_metrics(self, query_id: str) -> Optional[dict]:
+        """Fetch one query's recorded metrics row, or None.
+
+        Lets a caller that only has a query_id (e.g. the HTTP API, whose feedback
+        request carries no question text) backfill the denormalised fields on a
+        feedback row. Returns None if the table does not exist yet.
+        """
+        with self._conn() as conn:
+            try:
+                row = conn.execute(
+                    "SELECT * FROM query_metrics WHERE query_id = ?", (query_id,)
+                ).fetchone()
+            except sqlite3.OperationalError:
+                return None
+            return dict(row) if row else None
+
     def get_feedback(
         self,
         rating: Optional[str] = None,

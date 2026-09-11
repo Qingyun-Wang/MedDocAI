@@ -52,7 +52,7 @@ def _patient_list():
 
 
 def _run_query(query: str, patient_context: dict | None, role: str,
-               conversation_history: list[dict]) -> dict:
+               conversation_history: list[dict], on_progress=None) -> dict:
     """Run one query through the pipeline.
 
     Delegates to graph.pipeline.answer_query rather than re-implementing it: that
@@ -62,7 +62,52 @@ def _run_query(query: str, patient_context: dict | None, role: str,
     """
     from graph.pipeline import answer_query
     return answer_query(query, patient_context, role, max_iterations=2,
-                        conversation_history=conversation_history)
+                        conversation_history=conversation_history,
+                        on_progress=on_progress)
+
+
+# ---------------------------------------------------------------------------
+# Live progress
+# ---------------------------------------------------------------------------
+
+def _progress_reporter(status):
+    """Build an on_progress callback that narrates the pipeline into `status`.
+
+    A query takes ~30s, of which ~60% is the Answer Generator emitting tokens —
+    time that cannot be made shorter, only made legible. A single static spinner
+    for 30s is indistinguishable from a hung app; naming each agent as it finishes
+    also puts the multi-agent architecture on screen, where it is otherwise the
+    least visible thing about the system.
+
+    Nodes REPEAT when the corrective-RAG loop fires, so lines accumulate rather
+    than replace — a retry is meant to be visible, not hidden.
+    """
+    def report(node: str, upd: dict) -> None:
+        if node == "router":
+            intent = upd.get("intent", "?")
+            subs = upd.get("sub_queries") or []
+            line = f"**Router** → `{intent}`"
+            if subs:
+                line += f" · fan-out ×{len(subs)}"
+            status.write(line)
+        elif node == "retrieval":
+            status.write(f"**Retrieval** → {len(upd.get('raw_evidence') or [])} candidates")
+        elif node == "evidence_filter":
+            status.write(f"**Evidence Filter** → reranked, kept "
+                         f"{len(upd.get('filtered_evidence') or [])}")
+        elif node == "answer_generator":
+            status.write("**Answer Generator** → drafted")
+        elif node == "reviewer":
+            if upd.get("review_passed"):
+                status.write("**Reviewer** → passed ✓")
+            else:
+                status.write(f"**Reviewer** → failed, retrying via "
+                             f"`{upd.get('route_back_to') or 'answer_generator'}`")
+        elif node == "patient_summary":
+            status.write("**Patient Summary** → served stored summary")
+        elif node == "safety":
+            status.write(f"**Safety** → {len(upd.get('disclaimers') or [])} disclaimers")
+    return report
 
 
 # ---------------------------------------------------------------------------
@@ -418,12 +463,20 @@ def main():
 
         # Run the pipeline
         with st.chat_message("assistant"):
-            with st.spinner("Thinking… (routing → retrieving → reranking → answering → reviewing)"):
+            with st.status("Running the agent pipeline…", expanded=True) as status:
                 try:
-                    final = _run_query(prompt, patient_context, role, convo)
+                    final = _run_query(prompt, patient_context, role, convo,
+                                       on_progress=_progress_reporter(status))
                 except Exception as e:
+                    status.update(label="Pipeline error", state="error")
                     st.error(f"Pipeline error: {e}")
                     st.stop()
+                iters = final.get("iteration", 0)
+                status.update(
+                    label=("Answered" if iters <= 1 else
+                           f"Answered after {iters} passes (self-corrected)"),
+                    state="complete", expanded=False,
+                )
 
             evidence = [{
                 "score": e.score,

@@ -29,6 +29,11 @@ langsmith>=0.1
 ragas>=0.4              # needs evaluation/ragas_compat.py shim with langchain-core 1.x
 langchain-openai>=1.0  # RAGAS judge (gpt-4o-mini) + embeddings
 
+# API service layer (Phase 5) — exposes the pipeline over HTTP
+fastapi>=0.115
+uvicorn[standard]>=0.30
+httpx>=0.27            # also used by fastapi.testclient
+
 # Frontend (Phase 3)
 streamlit>=1.35
 

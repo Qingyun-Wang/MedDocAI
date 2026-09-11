@@ -31,7 +31,17 @@ jobs:
   ragas-smoke:
     name: RAGAS smoke-eval (med_anon)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # 25 was too tight and cost a whole run: the FIRST real firing of this gate
+    # timed out before it could render a verdict. MEASURED breakdown of a full
+    # green run (34494312789), once PYTHONUNBUFFERED made the phases visible:
+    #   Phase A — 10 pipeline queries:   227s  (12%)  17.7-32.8s each, all iter=1
+    #   Phase B — RAGAS scoring:        1614s  (88%)
+    #   total 33.5 min
+    # So the pipeline is NOT the bottleneck — judging it is. 45 min leaves ~11 min
+    # of headroom. If this needs to get faster, raise the RAGAS judge concurrency
+    # (evaluation/run_eval.py CONCURRENCY); extending the timeout again would only
+    # be treating the symptom.
+    timeout-minutes: 45
     # Skip drafts, and skip fork PRs — a fork must never reach repo secrets.
     if: >
       github.event_name == 'workflow_dispatch' ||
@@ -82,6 +92,11 @@ jobs:
           QDRANT_API_KEY: ${{ secrets.QDRANT_API_KEY }}
           OPENFDA_API_KEY: ${{ secrets.OPENFDA_API_KEY }}
           MEDDOCAI_METRICS: "0"     # don't create a stray SQLite file on the runner
+          # Python block-buffers stdout when it is a pipe, so the per-question
+          # progress never reached the log and a SLOW run was indistinguishable
+          # from a HUNG one — the timeout above was undiagnosable without
+          # downloading the artifact. Never debug a long CI job blind.
+          PYTHONUNBUFFERED: "1"
         run: |
           python -m evaluation.run_eval \
             --ids med_anon_01,med_anon_02,med_anon_03,med_anon_04,med_anon_05,med_anon_06,med_anon_07,med_anon_08,med_anon_09,med_anon_10 \
