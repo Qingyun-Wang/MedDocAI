@@ -20,6 +20,10 @@
 
 **▶️ Try it live: [huggingface.co/spaces/QingyunWang/MedDocAI](https://huggingface.co/spaces/QingyunWang/MedDocAI)** — ask a real medication, condition, or Medicaid-policy question and watch the cited, source-grounded answer build. *(Free Space; the first request may take ~30s while it wakes.)*
 
+![MedDocAI answering a patient question, showing each agent as it runs and the corrective-RAG loop self-correcting](docs/demo.gif)
+
+<sub>*A real query against the live Space, **sped up ~5×**. Watch the middle of the run: the Reviewer rejects the first draft (only 1 evidence chunk survived reranking), routes back to the Router, and the retry broadens retrieval 22 → 33 candidates and lifts the evidence to 3 — so the panel settles on **"Answered after 2 passes (self-corrected)"**. That loop is the point of the architecture, and it is not staged.*</sub>
+
 ---
 
 ## Why this project
