@@ -57,9 +57,19 @@ jobs:
 
       - name: Copy the tracked-file allowlist into the Space
         run: |
+          # NOTE: docs/ is deliberately NOT shipped to the Space. HuggingFace's
+          # pre-receive hook REJECTS any binary not tracked by LFS, and the Space's
+          # .gitattributes only covers *.db -- so docs/demo.gif got the entire push
+          # declined ("Your push was rejected because it contains binary files").
+          # This CANNOT be fixed by syncing .gitattributes: that is the one file this
+          # workflow must never overwrite (it would strip the DB's LFS filter, see
+          # invariant 2 above). Instead README.md references the GIF by absolute
+          # raw.githubusercontent URL, so it renders on GitHub AND in the Space
+          # README without the binary ever reaching HF.
           git ls-files \
             | grep -v '^\.gitattributes$' \
             | grep -v '^README\.md$' \
+            | grep -v '^docs/' \
             | while read -r f; do
                 mkdir -p "hf-space/$(dirname "$f")"
                 cp "$f" "hf-space/$f"
