@@ -117,6 +117,13 @@ def reviewer_node(state: PipelineState) -> dict:
         input_schema=_INPUT_SCHEMA,
         max_tokens=700,
         caller="reviewer",
+        # No prompt caching: this prefix (tools + system) measures just UNDER
+        # Sonnet 4.5's 1,024-token minimum, so the API ignores a cache_control
+        # marker and reports neither a read nor a write. Marking it anyway would
+        # fire the "caching did nothing" warning on every single query and train
+        # everyone to ignore it. The Reviewer's cost is its EVIDENCE (~6,100 of
+        # its ~8,000 input tokens), which is unique per question and uncacheable.
+        cache_prefix=False,
     )
 
     result = ReviewResult(

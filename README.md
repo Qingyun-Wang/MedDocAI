@@ -287,6 +287,23 @@ fails the build rather than passing on the average of the survivors — a run wh
 
 ---
 
+### Cost, measured then addressed
+
+The same instrumentation profiles spend: **73% of the bill is input tokens**, and the
+Router re-sent an identical 1,375-token `tools`+`system` block on *every* query.
+
+Prompt caching that block cuts the Router's billed input **1,931 -> 440 tokens** (~4.9%
+of total spend). The more interesting result is what was *rejected*: caching the
+retrieved evidence across a corrective-RAG retry looked like the bigger win, but only
+19% of queries reuse their evidence (the rest re-run retrieval), so the write premium
+on the other 81% cancels it — **+1.3%, measured, not guessed.**
+
+Prompt caching fails *silently* — a prefix under the model's minimum is ignored, both
+cache counters return zero, and the bill just rises. So a request that asks for caching
+and gets neither a read nor a write logs a warning. It caught a real bug on its first
+run: the Reviewer's prefix sits just under the 1,024-token minimum, which a
+`count_tokens` estimate had said it cleared.
+
 ### Latency, measured then addressed
 
 `query_metrics` over 51 real queries: median **30.8s**, p90 73.6s. The breakdown
@@ -377,7 +394,7 @@ streamlit run frontend/app.py
 ### Run the tests / evaluation
 
 ```bash
-pytest -q                                   # 361 tests (data-dependent ones auto-skip without data/)
+pytest -q                                   # 375 tests (data-dependent ones auto-skip without data/)
 python evaluation/run_eval.py               # full RAGAS run (pipeline → scoring)
 python evaluation/run_eval.py --skip-pipeline   # re-score cached answers only
 ```
