@@ -148,6 +148,11 @@ def finish_query(query_id: str = "") -> dict:
 
     in_tok = sum(c["input_tokens"] for c in calls)
     out_tok = sum(c["output_tokens"] for c in calls)
+    # Surfaced at the query level so prompt caching is observable, not assumed:
+    # cache_read_tokens staying 0 across repeated queries means caching silently
+    # stopped working.
+    cache_read = sum(c.get("cache_read_tokens", 0) or 0 for c in calls)
+    cache_write = sum(c.get("cache_write_tokens", 0) or 0 for c in calls)
 
     # None-safe: if ANY call used an unpriced model the total is None rather than
     # a partial sum that would silently understate the true cost.
@@ -161,6 +166,8 @@ def finish_query(query_id: str = "") -> dict:
         "input_tokens": in_tok,
         "output_tokens": out_tok,
         "total_tokens": in_tok + out_tok,
+        "cache_read_tokens": cache_read,
+        "cache_write_tokens": cache_write,
         "cost_usd": cost_usd,
         "by_node": dict(nodes),
         "calls": calls,
