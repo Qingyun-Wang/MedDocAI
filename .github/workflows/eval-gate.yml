@@ -14,13 +14,11 @@ name: Eval Gate
 on:
   pull_request:
     branches: [main]
-    paths:
-      - 'agents/**'
-      - 'graph/**'
-      - 'tools/**'
-      - 'models/**'
-      - 'evaluation/**'
-      - 'requirements.txt'
+    # NOTE: deliberately NO `paths:` filter. A workflow skipped by a path filter
+    # never creates a check run at all, so as a REQUIRED status check it would sit
+    # at "Expected - waiting for status" forever and block every doc-only PR. The
+    # path test now lives in the job below, which always runs and always reports -
+    # green in ~20s when nothing relevant changed, full eval when it did.
   workflow_dispatch:
 
 concurrency:
@@ -51,20 +49,45 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # need history to diff against the PR base
+
+      - name: Does this PR touch the pipeline?
+        id: changes
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "manual dispatch - running the full eval"
+            exit 0
+          fi
+          BASE="origin/${{ github.base_ref }}"
+          git fetch --quiet origin "${{ github.base_ref }}"
+          FILES=$(git diff --name-only "$BASE"...HEAD)
+          echo "changed files:"; echo "$FILES" | sed 's/^/  /'
+          if echo "$FILES" | grep -qE '^(agents|graph|tools|models|evaluation)/|^requirements[.]txt$'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "-> pipeline code changed: running the full RAGAS eval"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "-> no pipeline code changed: reporting green without spending 33 min"
+          fi
 
       - name: Set up Python 3.11
+        if: steps.changes.outputs.run == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: pip
 
       - name: Cache cross-encoder model
+        if: steps.changes.outputs.run == 'true'
         uses: actions/cache@v4
         with:
           path: ~/.cache/huggingface
           key: hf-crossencoder-v1
 
       - name: Install dependencies (FULL — reranker parity matters here)
+        if: steps.changes.outputs.run == 'true'
         # Unlike ci.yml we do NOT strip sentence-transformers. The thresholds below
         # were calibrated with the cross-encoder active; without it the Evidence
         # Filter silently falls back to bi-encoder ordering with different
@@ -75,6 +98,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run RAGAS smoke-eval and gate on quality
+        if: steps.changes.outputs.run == 'true'
         # Thresholds sized against OBSERVED run-to-run spread, not a single run.
         # Across three full runs med_anon scored:
         #   faithfulness 0.970 / 0.962 / 0.955   -> floor 0.85 (margin ~0.11)
@@ -110,7 +134,7 @@ jobs:
             --max-pipeline-errors 0
 
       - name: Upload eval report
-        if: always()
+        if: always() && steps.changes.outputs.run == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: ragas-eval-report
