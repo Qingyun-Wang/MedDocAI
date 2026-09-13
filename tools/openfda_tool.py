@@ -180,12 +180,40 @@ def check_drug_recalls(drug_name: str, limit: int = 5) -> list[Evidence]:
         data = _api_get(ENFORCEMENT_URL, {"search": search2, "limit": str(limit)})
 
     if not data or not data.get("results"):
+        # An empty recall search means one of TWO very different things, and the
+        # old code reported both as "No current recalls — <name>":
+        #   (a) a real drug with no ongoing recalls  -> a genuine, useful negative
+        #   (b) a name openFDA does not recognise at all -> says nothing about safety
+        # Case (b) is absence of evidence dressed as evidence of absence. An
+        # adversarial eval question using an invented drug ("Zelvantix") got back
+        # "no current FDA recalls for Zelvantix", which reads as confirming the drug
+        # exists and is recall-free. Probe whether the name is known before claiming
+        # anything about it.
+        probe = _api_get(LABEL_URL, {
+            "search": f'openfda.generic_name:"{drug_name}"+OR+openfda.brand_name:"{drug_name}"',
+            "limit": "1",
+        })
+        known = bool(probe and probe.get("results"))
+
+        if known:
+            return [Evidence(
+                source="openfda_api",
+                title=f"No current recalls — {drug_name}",
+                text=f"No ongoing FDA recalls found for {drug_name} as of the latest data.",
+                score=None,
+                metadata={"drug_name": drug_name, "recall_count": 0, "name_known": True},
+                citation="FDA Enforcement Reports (live)",
+            )]
         return [Evidence(
             source="openfda_api",
-            title=f"No current recalls — {drug_name}",
-            text=f"No ongoing FDA recalls found for {drug_name} as of the latest data.",
+            title=f"No FDA record matched — {drug_name}",
+            text=(f"No FDA drug record matched the name '{drug_name}', so no recall "
+                  f"status could be determined. This is NOT a finding that "
+                  f"'{drug_name}' is safe, approved, or free of recalls — the name "
+                  f"may be misspelled, may be a non-US product, or may not be a "
+                  f"medication at all. Do not describe it as an existing drug."),
             score=None,
-            metadata={"drug_name": drug_name, "recall_count": 0},
+            metadata={"drug_name": drug_name, "recall_count": 0, "name_known": False},
             citation="FDA Enforcement Reports (live)",
         )]
 
