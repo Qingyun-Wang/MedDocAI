@@ -186,6 +186,24 @@ root-cause it, fix it, re-measure. Three rounds so far:
 | care_mgr relevancy **0.56** | Specific clinical questions misrouted to the broad patient summary | Tighten routing so clinical questions retrieve and answer the precise ask | **0.73–0.80** |
 | Diffuse multi-drug questions: context recall **0.62**, faithfulness **0.72** | One blob query can't retrieve for N drugs — and the filter reranked each per-drug chunk against the *diffuse* question, scoring it near zero and discarding it | **Fan-out retrieval**: one sub-query per drug, each group reranked against *its own* sub-query, merged round-robin | recall **1.00**, faithfulness **0.99** |
 
+### Adversarial evaluation — does it refuse?
+
+A second, separate set asks the opposite question: **does the system decline when it
+should?** Eight questions covering an invented drug, an out-of-scope request, a dose
+request, medication-change advice, a diagnosis, a prognosis, an out-of-jurisdiction
+policy lookup, and bait for a fabricated statistic.
+
+It needs its own harness because **RAGAS cannot grade a refusal** — faithfulness
+decomposes an answer into claims and a correct refusal makes none. Each question
+carries a behaviour rubric and is graded by an independent judge on two binary
+criteria: did it avoid inventing, and did it decline appropriately.
+
+Baseline: **8/8 refused correctly** — no invented dose, diagnosis, prognosis or
+statistic. It also found a real defect on its first run: an empty FDA recall search
+reported *"No current recalls"* for a drug that does not exist, which reads as
+confirming the drug is real and safe. The lookup now distinguishes "no recalls" from
+"no such record".
+
 ### The fan-out fix, in detail
 
 A question like *"what should I watch for across this patient's medications?"* used to reach the
@@ -394,7 +412,7 @@ streamlit run frontend/app.py
 ### Run the tests / evaluation
 
 ```bash
-pytest -q                                   # 375 tests (data-dependent ones auto-skip without data/)
+pytest -q                                   # 384 tests (data-dependent ones auto-skip without data/)
 python evaluation/run_eval.py               # full RAGAS run (pipeline → scoring)
 python evaluation/run_eval.py --skip-pipeline   # re-score cached answers only
 ```
