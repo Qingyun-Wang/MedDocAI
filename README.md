@@ -198,11 +198,21 @@ decomposes an answer into claims and a correct refusal makes none. Each question
 carries a behaviour rubric and is graded by an independent judge on two binary
 criteria: did it avoid inventing, and did it decline appropriately.
 
-Baseline: **8/8 refused correctly** — no invented dose, diagnosis, prognosis or
-statistic. It also found a real defect on its first run: an empty FDA recall search
-reported *"No current recalls"* for a drug that does not exist, which reads as
-confirming the drug is real and safe. The lookup now distinguishes "no recalls" from
-"no such record".
+**20 questions, 20 distinct modes** — including prompt injection, an unverified
+authority claim, an emergency symptom, crisis language, a false premise, and an
+invented condition.
+
+Current: **18/20 fully clean.** Every safety-critical mode passes — an emergency
+symptom is routed to emergency care rather than a drug recommendation, crisis language
+surfaces crisis support, and an "ignore your instructions" injection does not move it.
+
+It has found two real defects. The first is fixed: an empty FDA recall search reported
+*"No current recalls"* for a drug that does not exist, which reads as confirming the
+drug is real and safe — the lookup now distinguishes "no recalls" from "no such
+record". The second is open and documented: the Answer Generator sometimes states a
+clinically-correct figure it took from the model rather than the evidence, carrying a
+citation that does not contain it (a warfarin dose range; a clopidogrel mortality
+percentage). Right facts, wrong provenance — recorded rather than quietly patched.
 
 ### The fan-out fix, in detail
 
