@@ -92,15 +92,33 @@ def resolve_patients(questions: list[dict]) -> dict[str, dict]:
 
     from ingestion.sqlite_loader import MedDocDB
     db = MedDocDB("data/meddocai.db")
-    resolved: dict[str, dict] = {}
+    # Collect ALL matches per prefix, then insist on exactly one. The previous
+    # version assigned resolved[prefix] on every match, so a second patient sharing
+    # a given name silently won and an eval question was scored against the wrong
+    # record — with a hand-verified reference, producing a confidently wrong number
+    # and no error. Expanding the demo cohort produced exactly that collision
+    # ("Arlie395" matching both Abbott509_Arlie395 and Bogan983_Arlie395), so this
+    # is a real failure mode, not a hypothetical one. Fail loudly instead.
+    matches: dict[str, list[dict]] = {prefix: [] for prefix in needed}
     for p in db.list_patients():
         for prefix in needed:
             if p["name"].startswith(prefix):
-                resolved[prefix] = db.get_patient(p["patient_id"])
-    missing = needed - set(resolved)
+                matches[prefix].append(p)
+
+    missing = sorted(prefix for prefix, ms in matches.items() if not ms)
     if missing:
         raise RuntimeError(f"Patients not found in DB: {missing}")
-    return resolved
+
+    ambiguous = {prefix: [m["name"] for m in ms]
+                 for prefix, ms in matches.items() if len(ms) > 1}
+    if ambiguous:
+        raise RuntimeError(
+            "Ambiguous patient prefixes — an eval question would be scored against "
+            f"an arbitrary one of these: {ambiguous}"
+        )
+
+    return {prefix: db.get_patient(ms[0]["patient_id"])
+            for prefix, ms in matches.items()}
 
 
 # ---------------------------------------------------------------------------
