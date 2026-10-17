@@ -68,7 +68,7 @@ class _FakeDB:
     def count_patients(self):
         self._boom("count_patients"); return len(self._patients)
 
-    def list_patients(self, limit=100):
+    def list_patients(self, limit=500):
         """Mirrors the REAL method, which selects ONLY the roster columns.
 
         The fake originally returned the full patient dict — richer than reality —
@@ -315,3 +315,79 @@ class TestOpenAPI:
         for path in ("/query", "/patients", "/feedback", "/health"):
             assert path in spec["paths"]
         assert spec["info"]["title"] == "MedDocAI API"
+
+
+# ---------------------------------------------------------------------------
+# Roster truncation must never be silent
+# ---------------------------------------------------------------------------
+
+class TestRosterTruncation:
+    """GET /patients returns a bare JSON array, so a client that asks for N and
+    receives N cannot tell "that's everyone" from "that's the first page".
+
+    This stopped being hypothetical when the demo cohort went from 10 patients to
+    99 against a default limit of 100: one more patient and the endpoint would have
+    started dropping someone, with no error and nothing in the body to reveal it.
+    """
+
+    def _client(self, monkeypatch, n_rows, total):
+        from fastapi.testclient import TestClient
+        import api.main as M
+
+        class _DB:
+            def list_patients(self, limit=500):
+                rows = [{"patient_id": f"p{i}", "name": f"Pat{i} Sur{i}",
+                         "age": 40, "gender": "F", "has_summary": 1}
+                        for i in range(total)]
+                return rows[:min(limit, n_rows)]
+
+            def count_patients(self):
+                return total
+
+        monkeypatch.setattr(M, "_db", lambda: _DB())
+        return TestClient(M.app)
+
+    def test_headers_expose_the_real_total(self, monkeypatch):
+        c = self._client(monkeypatch, n_rows=100, total=150)
+        r = c.get("/patients?limit=100")
+        assert r.status_code == 200
+        assert r.headers["X-Total-Count"] == "150"
+        assert r.headers["X-Returned-Count"] == "100"
+
+    def test_truncation_is_detectable_by_the_client(self, monkeypatch):
+        """The whole point: returned < total is the signal."""
+        c = self._client(monkeypatch, n_rows=100, total=150)
+        r = c.get("/patients?limit=100")
+        assert int(r.headers["X-Returned-Count"]) < int(r.headers["X-Total-Count"])
+
+    def test_complete_roster_reports_equal_counts(self, monkeypatch):
+        c = self._client(monkeypatch, n_rows=99, total=99)
+        r = c.get("/patients")
+        assert r.headers["X-Total-Count"] == r.headers["X-Returned-Count"] == "99"
+
+    def test_default_limit_covers_the_current_cohort(self, monkeypatch):
+        """99 patients must come back without the caller passing a limit — the
+        regression the old default of 100 was one patient away from causing."""
+        c = self._client(monkeypatch, n_rows=99, total=99)
+        assert len(c.get("/patients").json()) == 99
+
+    def test_default_limit_matches_the_data_layer(self):
+        """An API cap tighter than the DB's own is a trap nobody looks for."""
+        import inspect
+        from ingestion.sqlite_loader import MedDocDB
+        import api.main as M
+        db_default = inspect.signature(MedDocDB.list_patients).parameters["limit"].default
+        api_default = M.app.routes and None
+        # the API default lives on the Query() object
+        from fastapi import routing
+        route = next(r for r in M.app.routes
+                     if isinstance(r, routing.APIRoute) and r.path == "/patients")
+        api_default = next(p.default.default for p in
+                           inspect.signature(route.endpoint).parameters.values()
+                           if p.name == "limit")
+        assert api_default == db_default == 500
+
+    def test_limit_is_validated(self, monkeypatch):
+        c = self._client(monkeypatch, n_rows=10, total=10)
+        assert c.get("/patients?limit=0").status_code == 422
+        assert c.get("/patients?limit=99999").status_code == 422
