@@ -25,7 +25,7 @@ import os
 import time
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request, status
+from fastapi import FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -140,12 +140,32 @@ def health() -> HealthResponse:
 # ---------------------------------------------------------------------------
 
 @app.get("/patients", response_model=list[PatientSummary], tags=["patients"])
-def list_patients(limit: int = 100) -> list[PatientSummary]:
-    """The demo patient roster — the API equivalent of the sidebar selector."""
+def list_patients(
+    response: Response,
+    limit: int = Query(500, ge=1, le=5000,
+                       description="Maximum rows to return. Compare X-Total-Count "
+                                   "against X-Returned-Count to detect truncation."),
+) -> list[PatientSummary]:
+    """The demo patient roster — the API equivalent of the sidebar selector.
+
+    Returns `X-Total-Count` and `X-Returned-Count`. Without them a truncated roster
+    is INVISIBLE: the response is a bare JSON array, so a client that asks for 100
+    and gets 100 cannot tell whether that is everyone or the first page of more, and
+    silently never sees the rest.
+
+    That stopped being hypothetical when the demo cohort grew from 10 patients to 99
+    against a default of 100 — one more patient and this endpoint would have started
+    dropping someone with no error. The default now matches the data layer's own
+    limit of 500 rather than an arbitrary number chosen when there were ten patients.
+    """
     try:
         rows = _db().list_patients(limit=limit)
+        total = _db().count_patients()
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"Database unavailable: {str(e)[:120]}")
+
+    response.headers["X-Total-Count"] = str(total)
+    response.headers["X-Returned-Count"] = str(len(rows))
 
     # NOTE: list_patients() selects only the roster columns — no clinical JSON — so
     # counts are NOT available here and must not be faked as zero. Clients that need
