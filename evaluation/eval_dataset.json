@@ -1,13 +1,13 @@
 {
   "version": "1.0",
-  "description": "MedDocAI RAGAS evaluation set - 35 curated questions across intents. References are grounded in FDA label content, CMS eligibility data (as loaded in SQLite), live openFDA recall/shortage data (as of 2026-06), and the 10 demo patients' FHIR records.",
+  "description": "MedDocAI RAGAS evaluation set - 44 curated questions across intents. References are grounded in FDA label content, CMS eligibility data (as loaded in SQLite), live openFDA recall/shortage data (as of 2026-06), and the 10 demo patients' FHIR records.",
   "categories": {
     "med_anon": "Medication question, anonymous (10)",
     "med_patient": "Medication question with patient context (10)",
     "policy": "Medicaid policy / eligibility / pricing (5)",
     "recall": "Drug recall / shortage, live API (3)",
-    "care_mgr": "Care-manager clinical question with patient context (2)",
-    "diffuse": "Diffuse multi-entity question: one broad ask spanning ALL of a patient's active medications (R9 fan-out retrieval target) (5)"
+    "care_mgr": "Care-manager clinical question with patient context (8)",
+    "diffuse": "Diffuse multi-entity question: one broad ask spanning ALL of a patient's active medications (R9 fan-out retrieval target) (8)"
   },
   "questions": [
     {
@@ -251,6 +251,54 @@
       "reference": "For this 90-year-old with diabetes and coronary disease on six active medications: prioritize renal function monitoring for metformin (age 65+ and declining kidney function are lactic acidosis risk factors; eGFR determines whether metformin remains safe), glycemic monitoring given his HbA1c of 8.8% indicating poor control, bleeding surveillance on clopidogrel, blood pressure monitoring across his three BP-active drugs (amlodipine, captopril, nitroglycerin) with fall risk at his age, and potassium/renal checks for captopril. His severe dyslipidemia (LDL 163, HDL 33, TG 239) is untreated - no statin is on his list."
     },
     {
+      "id": "care_mgr_03",
+      "category": "care_mgr",
+      "question": "What medication safety issues should we flag for this patient?",
+      "user_role": "care_manager",
+      "patient": "Rolando678",
+      "reference": "The most important flag is duplicate acetaminophen exposure: this patient takes both an acetaminophen 325 mg / oxycodone 5 mg combination tablet and a separate acetaminophen 325 mg tablet, so the combined daily acetaminophen dose can exceed what either product alone suggests, and acetaminophen carries a boxed warning for hepatotoxicity and acute liver failure. Second, he takes metformin while carrying a diagnosis of diabetic renal disease, and his microalbumin creatinine ratio of 65 mg/g is well above the 30 mg/g reference limit; metformin requires assessment of renal function before and during treatment and is contraindicated in severe renal impairment because of lactic acidosis risk. Third, an opioid-containing analgesic in an 81-year-old with osteoporosis, a prior closed hip fracture, and a pathological fracture raises the risk of sedation, falls, and further fracture. His lipid and glucose results are also markedly abnormal, with triglycerides 489 mg/dL, total cholesterol 248 mg/dL, and glucose 185 mg/dL."
+    },
+    {
+      "id": "care_mgr_04",
+      "category": "care_mgr",
+      "question": "Is there anything about this patient's pain medication we should be concerned about?",
+      "user_role": "care_manager",
+      "patient": "Jamir894",
+      "reference": "Yes. This 90-year-old takes naproxen sodium, and non-steroidal anti-inflammatory drugs carry a boxed warning for an increased risk of serious cardiovascular thrombotic events, including myocardial infarction and stroke, which can be fatal. This patient has both coronary heart disease and a prior stroke, so he already sits in the elevated-risk group that warning describes, and NSAIDs are not recommended in patients with established cardiovascular disease. Naproxen also carries a boxed warning for serious gastrointestinal bleeding, ulceration, and perforation, with elderly patients at greater risk. He concurrently takes nitroglycerin for angina, which reflects active coronary disease. His diabetes appears reasonably controlled with a hemoglobin A1c of 6.5 percent, but his LDL cholesterol of 153 mg/dL and total cholesterol of 236 mg/dL remain above target despite simvastatin."
+    },
+    {
+      "id": "care_mgr_05",
+      "category": "care_mgr",
+      "question": "What should we prioritise reviewing for this member?",
+      "user_role": "care_manager",
+      "patient": "Luisa857",
+      "reference": "The priority is possible over-treatment of diabetes. This 89-year-old takes metformin and his recorded glucose is 66 mg/dL, below the 70 mg/dL lower reference limit, with a hemoglobin A1c of 6.2 percent. Tight glycaemic control carries little benefit and real hypoglycaemia risk in a frail elderly patient, and this patient also has Alzheimer's disease, which makes recognising and self-treating hypoglycaemia harder. Metformin also warrants renal monitoring given his age and diabetic complications. Separately he takes clopidogrel, which carries a boxed warning about diminished effectiveness in poor CYP2C19 metabolisers and increases bleeding risk, alongside nitroglycerin and amlodipine for coronary heart disease and hypertension. His documented stroke history and diabetic retinopathy indicate established vascular complications."
+    },
+    {
+      "id": "care_mgr_06",
+      "category": "care_mgr",
+      "question": "Are this member's lab results consistent with her current treatment?",
+      "user_role": "care_manager",
+      "patient": "Tyler255",
+      "reference": "Not entirely. Her diabetes appears inadequately controlled despite metformin: hemoglobin A1c is 7.7 percent against a reference limit of 5.7 percent, and glucose is 188 mg/dL against a 70 to 100 mg/dL range. She also has nonproliferative diabetic retinopathy and diabetic neuropathy, both established microvascular complications. Her lipids are abnormal with total cholesterol 255 mg/dL, LDL 153 mg/dL, triglycerides 325 mg/dL, and HDL 37 mg/dL, which is below the 40 mg/dL lower limit, and no lipid-lowering therapy appears on her active medication list. A further concern is naproxen, a non-steroidal anti-inflammatory drug, in a patient with diabetes; NSAIDs carry boxed warnings for cardiovascular thrombotic events and for gastrointestinal bleeding, and can affect renal function, which matters in diabetes. Her asthma regimen of inhaled fluticasone with albuterol as reliever is appropriate in structure."
+    },
+    {
+      "id": "care_mgr_07",
+      "category": "care_mgr",
+      "question": "What drug-condition interactions should we watch in this patient?",
+      "user_role": "care_manager",
+      "patient": "Bianka268",
+      "reference": "Clopidogrel is the main one to watch: it reduces platelet aggregation and increases bleeding risk, and it carries a boxed warning that its effectiveness is diminished in poor CYP2C19 metabolisers. He takes it alongside coronary heart disease, for which he also receives nitroglycerin, amlodipine, and simvastatin. His diabetes remains above target with a hemoglobin A1c of 7.4 percent and glucose 113 mg/dL despite metformin, and he already has diabetic neuropathy. Lipids remain abnormal with LDL 136 mg/dL and total cholesterol 230 mg/dL on simvastatin. Chlorpheniramine is a sedating first-generation antihistamine with anticholinergic effects, which is worth reviewing in a 71-year-old because of drowsiness and fall risk, particularly alongside other agents that lower blood pressure."
+    },
+    {
+      "id": "care_mgr_08",
+      "category": "care_mgr",
+      "question": "Is there anything in this patient's results that needs follow-up?",
+      "user_role": "care_manager",
+      "patient": "Brandi317",
+      "reference": "Yes. His potassium is 5.19 mmol/L, above the upper reference limit, and hyperkalaemia warrants repeat testing and review of contributing causes before it is acted on. His hemoglobin A1c is 5.9 percent, consistent with his recorded prediabetes, so glycaemic status is worth monitoring but does not currently indicate diabetes. Chloride is mildly elevated at 111 mmol/L. On the medication side he takes clopidogrel following a myocardial infarction; clopidogrel carries a boxed warning that its effectiveness depends on conversion to its active metabolite by CYP2C19 and is diminished in poor metabolisers, and it increases bleeding risk. He also takes simvastatin and amlodipine for coronary heart disease, and amoxicillin with clavulanate for an acute infection."
+    },
+    {
       "id": "diffuse_01",
       "category": "diffuse",
       "question": "What side effects or symptoms should I watch for across this patient's medications?",
@@ -289,6 +337,30 @@
       "user_role": "care_manager",
       "patient": "Cali421",
       "reference": "Yes. Three of this 90-year-old man's medications lower blood pressure - amlodipine, captopril and nitroglycerin - creating additive hypotension with dizziness and fall risk, so blood pressure should be monitored and he should be seated when using the nitroglycerin spray. Nitroglycerin is absolutely contraindicated with PDE-5 inhibitors such as sildenafil because of severe hypotension. Clopidogrel increases bleeding risk, which compounds the bleeding consequences of any fall. Captopril can cause hyperkalemia and declining renal function, and worsening renal function also raises metformin's lactic acidosis risk, since metformin is contraindicated below an eGFR of 30 - so renal function is the shared monitoring parameter linking captopril and metformin. His HbA1c of 8.8% shows diabetes is not well controlled, and his untreated dyslipidemia (LDL 163, HDL 33, triglycerides 239) adds cardiovascular risk on top of his coronary heart disease and prior myocardial infarction."
+    },
+    {
+      "id": "diffuse_06",
+      "category": "diffuse",
+      "question": "What should we monitor across all of this patient's medications?",
+      "user_role": "care_manager",
+      "patient": "Rolando678",
+      "reference": "Across this regimen, monitoring should cover several drugs. Metformin requires renal function assessment before and during treatment because of the risk of lactic acidosis, which is directly relevant here given his diabetic renal disease and a microalbumin creatinine ratio of 65 mg/g. Insulin requires blood glucose monitoring, since hypoglycaemia is the most common and most serious adverse reaction of insulin therapy, and his recorded glucose is 185 mg/dL. The acetaminophen and oxycodone combination requires attention to total daily acetaminophen intake because of the boxed warning for hepatotoxicity, which is compounded here by a separate plain acetaminophen tablet, and to sedation and respiratory depression from the opioid component. Alendronate requires correct administration with the patient remaining upright to reduce oesophageal irritation. Penicillin V requires awareness of hypersensitivity reactions."
+    },
+    {
+      "id": "diffuse_07",
+      "category": "diffuse",
+      "question": "What side effects should this patient watch for across her medications?",
+      "user_role": "patient",
+      "patient": "Tyler255",
+      "reference": "Across these medicines there are several things to watch for. Metformin can cause gastrointestinal upset such as diarrhoea and nausea, and carries a boxed warning for lactic acidosis, a rare but serious reaction that requires urgent attention if symptoms such as unusual muscle pain, difficulty breathing, or unusual tiredness occur. Naproxen carries boxed warnings for serious cardiovascular thrombotic events including heart attack and stroke, and for gastrointestinal bleeding and ulceration, which can occur without warning symptoms. Albuterol can cause tremor, nervousness, and a fast heartbeat, and needing it more often than usual can indicate worsening asthma. Inhaled fluticasone can cause oral thrush and hoarseness, which rinsing the mouth after use helps prevent. Penicillin V can cause allergic reactions and diarrhoea."
+    },
+    {
+      "id": "diffuse_08",
+      "category": "diffuse",
+      "question": "Are there any overlapping risks among this member's medications?",
+      "user_role": "care_manager",
+      "patient": "Bianka268",
+      "reference": "There are overlapping cardiovascular and sedation-related considerations. Clopidogrel reduces platelet aggregation and increases bleeding risk, and carries a boxed warning about diminished effectiveness in poor CYP2C19 metabolisers. Amlodipine lowers blood pressure and can cause peripheral oedema, dizziness, and flushing. Nitroglycerin also lowers blood pressure and commonly causes headache and hypotension, so taken with amlodipine the blood-pressure-lowering effects can overlap. Chlorpheniramine is a sedating antihistamine, adding drowsiness and anticholinergic effects on top of those agents. Simvastatin carries a risk of myopathy and rhabdomyolysis that rises with higher doses and with interacting drugs. Metformin carries a boxed warning for lactic acidosis and requires renal monitoring, relevant here given his diabetic neuropathy and hemoglobin A1c of 7.4 percent."
     }
   ]
 }
