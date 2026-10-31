@@ -66,10 +66,17 @@ jobs:
           # invariant 2 above). Instead README.md references the GIF by absolute
           # raw.githubusercontent URL, so it renders on GitHub AND in the Space
           # README without the binary ever reaching HF.
+          #
+          # evaluation/fixtures/ is excluded for a different reason: it is a ~200 KB
+          # SQLite fixture that only the CI eval gate needs. The Space has its own
+          # data/meddocai.db and would gain nothing, and shipping a second .db into a
+          # repo whose .gitattributes LFS-tracks *.db is needless risk around the one
+          # file this workflow must never disturb.
           git ls-files \
             | grep -v '^\.gitattributes$' \
             | grep -v '^README\.md$' \
             | grep -v '^docs/' \
+            | grep -v '^evaluation/fixtures/' \
             | while read -r f; do
                 mkdir -p "hf-space/$(dirname "$f")"
                 cp "$f" "hf-space/$f"

@@ -58,7 +58,11 @@ RESULTS_DIR = os.path.join(EVAL_DIR, "results")
 
 JUDGE_MODEL = "gpt-4o-mini"
 JUDGE_EMBED = "text-embedding-3-small"
-CONCURRENCY = 4          # parallel RAGAS scorings
+# Parallel RAGAS scorings. Phase B (judging) is ~88% of a full run — 1614s of 1827s
+# on the 10-question gate — so this knob, not the pipeline, decides whether a wider
+# gate is affordable. Env-overridable so CI can tune it without a code change, and so
+# it can be dialled back if the judge starts rate-limiting.
+CONCURRENCY = int(os.getenv("MEDDOCAI_EVAL_CONCURRENCY", "12"))
 
 METRICS = ["faithfulness", "answer_relevancy", "context_precision", "context_recall"]
 
@@ -339,6 +343,8 @@ def check_gate(
     thresholds: dict,
     min_scored_frac: float = 0.8,
     max_pipeline_errors: int = 0,
+    category_thresholds: dict | None = None,
+    min_category_rows: int = 3,
 ) -> tuple[bool, list[str]]:
     """Decide whether this run clears the quality bar. FAIL-CLOSED.
 
@@ -346,6 +352,23 @@ def check_gate(
     drops the last two when averaging, which means a run where 8/10 rows failed
     would report the mean of the 2 survivors and look great. So three separate
     rules guard that, and a MISSING aggregate is a failure, never a pass.
+
+    PER-CATEGORY floors (`category_thresholds`) exist because one aggregate number
+    cannot gate a heterogeneous question set. The categories legitimately score very
+    differently on answer_relevancy — med_anon ~0.93, care_mgr ~0.62 — because RAGAS
+    computes relevancy by generating questions from the answer and comparing them to
+    the original, and a deliberately broad care-manager ask ("what should we
+    prioritise for this member?") produces a broad multi-topic answer whose generated
+    questions sit far from the vague original. Care managers ask broad questions; the
+    metric simply fits that category poorly.
+
+    Averaging them into one number has two failure modes, both bad:
+      - widen the gate and it goes RED with nothing regressed, because care_mgr drags
+        the mean under a floor calibrated on med_anon alone;
+      - lower that floor to compensate and med_anon could fall 0.93 -> 0.80 unnoticed.
+
+    A per-category floor fixes both, and makes a failure actionable: "care_mgr
+    relevancy dropped" is a lead, "overall dipped" is not.
 
     Returns (passed, reasons).
     """
@@ -379,7 +402,63 @@ def check_gate(
         if value < floor:
             reasons.append(f"{metric} {value:.4f} < {floor:.2f}")
 
+    # Rule 4 — per-category floors.
+    by_cat = summary.get("by_category", {}) or {}
+    for cat, metric_floors in (category_thresholds or {}).items():
+        cat_rows = [r for r in rows if r.get("category") == cat]
+
+        # A category that is configured but absent from the run is a fail-closed
+        # case: silently skipping it is how a gate stops guarding something while
+        # still reporting green.
+        if not cat_rows:
+            reasons.append(f"{cat}: configured floor but no rows in this run (fail-closed)")
+            continue
+
+        # Too few rows to read. A 2-question category moves 0.25 on one bad answer,
+        # so gating it would fire on noise — say so rather than pretend it passed.
+        if len(cat_rows) < min_category_rows:
+            reasons.append(
+                f"{cat}: only {len(cat_rows)} row(s), need >= {min_category_rows} "
+                f"to be readable (fail-closed)"
+            )
+            continue
+
+        for metric, floor in metric_floors.items():
+            value = (by_cat.get(cat) or {}).get(metric)
+            if value is None:
+                reasons.append(f"{cat}/{metric}: no numeric score produced (fail-closed)")
+                continue
+            scored = len(_numeric([r.get("scores", {}).get(metric) for r in cat_rows]))
+            frac = scored / len(cat_rows)
+            if frac < min_scored_frac:
+                reasons.append(
+                    f"{cat}/{metric}: only {scored}/{len(cat_rows)} rows scored "
+                    f"({frac:.0%} < {min_scored_frac:.0%}) — judge errors suspected"
+                )
+                continue
+            if value < floor:
+                reasons.append(f"{cat}/{metric} {value:.4f} < {floor:.2f}")
+
     return (not reasons), reasons
+
+
+def _parse_category_thresholds(pairs: list[str] | None) -> dict:
+    """Parse repeated --fail-under-category CATEGORY:METRIC=FLOAT.
+
+    e.g. --fail-under-category care_mgr:faithfulness=0.90
+    """
+    out: dict[str, dict] = {}
+    for raw in pairs or []:
+        if ":" not in raw or "=" not in raw:
+            raise SystemExit(
+                f"--fail-under-category expects CATEGORY:METRIC=FLOAT, got: {raw}")
+        cat, _, rest = raw.partition(":")
+        metric, _, value = rest.partition("=")
+        cat, metric = cat.strip(), metric.strip()
+        if metric not in METRICS:
+            raise SystemExit(f"unknown metric {metric!r}; choose from {METRICS}")
+        out.setdefault(cat, {})[metric] = float(value)
+    return out
 
 
 def _parse_thresholds(pairs: list[str] | None) -> dict:
@@ -417,6 +496,18 @@ def main():
     parser.add_argument("--fail-under", action="append", metavar="METRIC=FLOAT",
                         help="Fail (exit 1) if the overall METRIC is below FLOAT. "
                              "Repeatable. Passing any of these enables the gate.")
+    parser.add_argument("--fail-under-category", action="append",
+                        metavar="CATEGORY:METRIC=FLOAT",
+                        help="Fail if a CATEGORY's METRIC is below FLOAT. Repeatable. "
+                             "Use this rather than widening --fail-under: the "
+                             "categories legitimately score very differently on "
+                             "answer_relevancy (med_anon ~0.93, care_mgr ~0.62), so a "
+                             "single aggregate either reddens on a healthy run or has "
+                             "to be lowered until it stops guarding the strong ones.")
+    parser.add_argument("--min-category-rows", type=int, default=3,
+                        help="A gated category needs at least this many rows to be "
+                             "readable; fewer and the gate fails closed rather than "
+                             "reporting a number that moves 0.25 on one bad answer")
     parser.add_argument("--min-scored-frac", type=float, default=0.8,
                         help="Per gated metric, the minimum fraction of rows that must "
                              "have a numeric score (guards against judge errors)")
@@ -445,21 +536,29 @@ def main():
     # Console summary (top section of the markdown)
     print("\n" + "\n".join(md.split("\n## Per-question")[0].splitlines()))
 
-    # ---- Quality gate (only active when --fail-under was passed) ----
+    # ---- Quality gate (active when --fail-under or --fail-under-category passed) ----
     thresholds = _parse_thresholds(args.fail_under)
-    if not thresholds:
+    category_thresholds = _parse_category_thresholds(args.fail_under_category)
+    if not thresholds and not category_thresholds:
         return 0
 
     passed, reasons = check_gate(
         summary, rows, thresholds,
         min_scored_frac=args.min_scored_frac,
         max_pipeline_errors=args.max_pipeline_errors,
+        category_thresholds=category_thresholds,
+        min_category_rows=args.min_category_rows,
     )
     print("\n" + "=" * 60)
     if passed:
         print("QUALITY GATE: PASS")
         for metric, floor in thresholds.items():
             print(f"  OK  {metric}: {summary['overall'][metric]:.4f} >= {floor:.2f}")
+        for cat, floors in category_thresholds.items():
+            for metric, floor in floors.items():
+                v = (summary.get("by_category", {}).get(cat) or {}).get(metric)
+                n = sum(1 for r in rows if r.get("category") == cat)
+                print(f"  OK  {cat}/{metric}: {v:.4f} >= {floor:.2f}  (n={n})")
         return 0
     for reason in reasons:
         print(f"GATE FAIL: {reason}")
