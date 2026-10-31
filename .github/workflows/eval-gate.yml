@@ -97,18 +97,67 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Install the eval fixture database
+        if: steps.changes.outputs.run == 'true'
+        # 26 of the 44 eval questions need a patient record, and data/ is gitignored,
+        # so without this the gate can only ever run the 18 that need no patient —
+        # leaving personalisation, Medicaid policy, the care-manager persona and
+        # fan-out retrieval completely ungated.
+        #
+        # The fixture is ~216 KB, derived from the real database by
+        # scripts/build_eval_fixture_db.py, so it cannot drift into fiction. Copying
+        # it to the path the code already hardcodes avoids threading an env var
+        # through seven call sites for a CI-only concern.
+        #
+        # MEDDOCAI_METRICS stays "0" below, so the pipeline does not write
+        # query_metrics rows into it.
+        run: |
+          mkdir -p data
+          cp evaluation/fixtures/meddocai_eval.db data/meddocai.db
+          python - <<'PY'
+          import sqlite3
+          c = sqlite3.connect("data/meddocai.db")
+          n = c.execute("SELECT COUNT(*) FROM patient_summaries").fetchone()[0]
+          print(f"fixture installed: {n} patients")
+          assert n >= 13, f"fixture has only {n} patients - rebuild it"
+          PY
+
       - name: Run RAGAS smoke-eval and gate on quality
         if: steps.changes.outputs.run == 'true'
-        # Thresholds sized against OBSERVED run-to-run spread, not a single run.
-        # Across three full runs med_anon scored:
-        #   faithfulness 0.970 / 0.962 / 0.955   -> floor 0.85 (margin ~0.11)
-        #   answer_relevancy 0.954 / 0.927 / 0.951 -> floor 0.82 (margin ~0.11)
-        #   context_recall 0.950 / 0.950 / 0.950 -> floor 0.82 (margin ~0.13)
-        #   context_precision 0.823 / 0.839 / 0.754 -> floor 0.60 (margin ~0.15)
-        # context_precision is by far the most volatile (spread 0.085 vs <0.03 for
-        # the rest), so it gets the widest margin. A gate that reddens on ordinary
-        # judge noise is a gate people switch off.
-        # At n=10 one question swinging 1.0 -> 0.5 moves the mean by 0.05.
+        # 20 questions across five categories, not 10 of one. The previous gate ran
+        # med_anon only, so a regression in patient personalisation, Medicaid policy,
+        # the care-manager persona or fan-out retrieval shipped green.
+        #
+        # ANSWER_RELEVANCY IS GATED PER CATEGORY, NOT OVERALL. The categories score
+        # legitimately differently on it — med_anon ~0.93, care_mgr ~0.62 — because
+        # RAGAS generates questions from the answer and compares them to the original,
+        # and a deliberately broad care-manager ask produces a broad multi-topic answer
+        # whose generated questions sit far from the vague original. Measured: the two
+        # ORIGINAL care_mgr questions score 0.594 on the same system that scores
+        # med_anon at 0.93. One aggregate floor therefore either reddens on a healthy
+        # run (0.802 for the full set vs a 0.82 floor) or has to be lowered until
+        # med_anon could fall 0.93 -> 0.80 unnoticed.
+        #
+        # faithfulness and context_recall stay OVERALL: they do not vary much by
+        # category (faithfulness 0.985 on the new care_mgr questions vs 0.98 med_anon),
+        # so one floor is honest there and keeps the config small.
+        #
+        # Floors sized against observed run-to-run spread, not one run. med_anon over
+        # five gate runs: faithfulness 0.979-1.000, relevancy 0.850-0.957,
+        # precision 0.749-0.785, recall 0.950 flat. care_mgr relevancy measured
+        # 0.594 (original 2 Q) and 0.650 (new 6 Q) -> floor 0.45. A gate that reddens
+        # on ordinary judge noise is a gate people switch off.
+        #
+        # min-category-rows is 2 because policy and diffuse contribute 2 rows each
+        # here; the default of 3 would fail them closed.
+        #
+        # med_patient's relevancy floor is deliberately loose (0.40 against a measured
+        # 0.571). It is the WEAKEST category — lower than care_mgr on both relevancy
+        # and context_recall (0.750) — and a known open gap: "med_patient
+        # context_recall ~0.66 (retrieval coverage)" has been on the list since the
+        # first eval round. A tight floor here would fire on the existing weakness
+        # rather than on a regression, so this one only catches a collapse until the
+        # retrieval gap is actually fixed.
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -123,13 +172,17 @@ jobs:
           PYTHONUNBUFFERED: "1"
         run: |
           python -m evaluation.run_eval \
-            --ids med_anon_01,med_anon_02,med_anon_03,med_anon_04,med_anon_05,med_anon_06,med_anon_07,med_anon_08,med_anon_09,med_anon_10 \
+            --ids med_anon_01,med_anon_02,med_anon_03,med_anon_04,med_anon_05,med_anon_06,med_anon_07,med_anon_08,med_anon_09,med_anon_10,med_pat_01,med_pat_05,med_pat_08,policy_01,policy_05,care_mgr_03,care_mgr_04,care_mgr_05,diffuse_01,diffuse_06 \
             --out "$RUNNER_TEMP/evalout" \
             --tag ci \
             --fail-under faithfulness=0.85 \
-            --fail-under answer_relevancy=0.82 \
-            --fail-under context_recall=0.82 \
-            --fail-under context_precision=0.60 \
+            --fail-under context_recall=0.80 \
+            --fail-under-category med_anon:answer_relevancy=0.82 \
+            --fail-under-category med_anon:context_precision=0.60 \
+            --fail-under-category care_mgr:answer_relevancy=0.45 \
+            --fail-under-category care_mgr:faithfulness=0.85 \
+            --fail-under-category diffuse:faithfulness=0.85             --fail-under-category med_patient:faithfulness=0.85             --fail-under-category med_patient:answer_relevancy=0.40 \
+            --min-category-rows 2 \
             --min-scored-frac 0.8 \
             --max-pipeline-errors 0
 

@@ -14,6 +14,10 @@ data/
 # Database
 *.db
 *.sqlite3
+# EXCEPTION: the CI eval fixture. ~200 KB, derived from the real DB, and committed on
+# purpose — without it the gate can only run the 18 of 44 questions that need no
+# patient record, leaving personalisation, policy, care-manager and fan-out ungated.
+!evaluation/fixtures/*.db
 
 # IDE
 .vscode/
